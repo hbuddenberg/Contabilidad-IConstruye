@@ -1,0 +1,18 @@
+ruta_archivos: "C:\\Users\\junio\\OneDrive\\Documentos\\PRUEBAS\\Contabilidad\\Por Hacer"
+
+web_scraping:
+  login_url: "https://cl.iconstruye.com/loginsso.aspx?hsCtaTracking=c5739d9b-1567-4a49-90d4-9e8e1701f105%7Cc9ffe135-4402-4101-a071-33ca6e5227d4"
+  usuario: "ltarrillo@santaelena.com"
+  clave: "Lt*.2020"
+  chromedriver_path: "C:\\Users\\junio\\OneDrive\\Documentos\\PRUEBAS\\Contabilidad\\ChromeDriver\\chromedriver.exe" # Ruta de ChromeDriver
+  carpeta_descargas: "C:\\Users\\junio\\OneDrive\\Documentos\\PRUEBAS\\Contabilidad\\Descargas" # Ahora será la carpeta de destino directa
+  areas_correos: "C:\\Users\\junio\\OneDrive\\Documentos\\PRUEBAS\\Contabilidad\\Contabilidad IConstruye\\data\\configuracion_correo.xlsx"
+  plantilla_correo: "C:\\Users\\junio\\OneDrive\\Documentos\\PRUEBAS\\Contabilidad\\Contabilidad IConstruye\\src\\templates\\plantilla.html"
+
+google:
+  cuenta: facturasproveedores@santaelena.com
+  clave: Fe*.2020
+
+correo:
+  cc: hans.buddenberg@smart-bots.cl
+  cco: h.buddenberg@gmail.com

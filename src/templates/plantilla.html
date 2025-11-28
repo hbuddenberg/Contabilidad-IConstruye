@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Orden de Embarque</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #f4f4f4;
+      font-family: Arial, sans-serif;
+    }
+
+    table {
+      border-spacing: 0;
+      width: 100%;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .email-container {
+      max-width: 1000px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+    }
+
+    .email-header {
+      padding: 10px 0;
+      text-align: center;
+      background-color: #ffffff;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .email-header img {
+      margin: 0 auto;
+      display: inline-block;
+      width: 100px;
+      height: auto;
+    }
+
+    .email-content {
+      padding: 20px;
+      color: #333333;
+      line-height: 1.6;
+    }
+
+    .email-footer {
+      text-align: center;
+      padding: 10px;
+      background-color: #f9fafb;
+      border-top: 1px solid #e0e0e0;
+      font-size: 11px;
+      color: #666666;
+    }
+
+    /* Estilos para la tabla */
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    .data-table {
+      width: 90%;
+      border-collapse: collapse;
+      margin: 15px auto;
+      font-size: 12px;
+    }
+
+    .data-table th, .data-table td {
+      border: 1px solid #ddd;
+      padding: 6px;
+      text-align: left;
+    }
+
+    .data-table th {
+      background-color: #007bff;
+      color: white;
+      font-size: 13px;
+    }
+
+    .data-table tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+  </style>
+</head>
+
+<body>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4;">
+    <tr>
+      <td align="center">
+        <table class="email-container" cellpadding="0" cellspacing="0">
+          <!-- Header -->
+          <tr>
+            <td class="email-header">
+              <img src="https://smart-bots.cl/logo_santahelena.jpg" alt="Company Logo">
+            </td>
+          </tr>
+
+          <!-- Content -->
+          <tr>
+            <td class="email-content">
+              <p>Estimados.</p></br>
+              <p>
+                {{VAR_MENSAJE}}
+              </p></br></br>
+              
+
+              <!-- Contenedor para la tabla con tamaño controlado -->
+              <div style="width: 70%; max-width: 100%; margin: auto;">
+                {{TABLA_FOLIOS_FALLIDOS}}
+              </div>
+            </br>
+          </br>
+            <p><strong>OBS:</strong> En caso de responder a este email, por favor, mantener en copia a todos los destinatarios.</p>
+
+              <p><strong>Saludos Cordiales</strong></p>
+            </td>
+            
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td class="email-footer">
+              <p>© 2025 Exportadora Santa Elena S.A.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+
+
+</html>

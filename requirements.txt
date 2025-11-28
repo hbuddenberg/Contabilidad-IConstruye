@@ -1,0 +1,15 @@
+# Dependencias principales del proyecto
+PyYAML>=6.0.3
+rich>=14.2.0
+selenium>=4.38.0
+xlsx2csv>=0.8.4
+
+# Dependencias adicionales encontradas en el análisis
+requests>=2.31.0
+pandas>=2.0.0
+openpyxl>=3.1.0
+
+# Dependencias para Gmail API
+google-api-python-client>=2.100.0
+google-auth-httplib2>=0.1.1
+google-auth-oauthlib>=1.0.0
