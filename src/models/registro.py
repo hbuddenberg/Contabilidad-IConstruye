@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+
 @dataclass
 class Registro:
     rut_proveedor: str
@@ -8,15 +9,33 @@ class Registro:
     folio: int
     fecha_docto: str
     area: str
-    estado_folio: Optional[bool] = field(default=None)  # True si el folio fue encontrado, False si no
-    estado_descarga: Optional[bool] = field(default=None)  # True si el Excel fue descargado, False si no
+    estado_folio: Optional[bool] = field(
+        default=None
+    )  # True si el folio fue encontrado, False si no
+    estado_descarga: Optional[bool] = field(
+        default=None
+    )  # True si el Excel fue descargado, False si no
     ruta_archivo: Optional[str] = field(default=None)  # Ruta del archivo descargado
-    estado_url_archivo: Optional[bool] = field(default=None)  # True si se encontró la URL en el archivo, False si no
-    url_archivo: Optional[str] = field(default=None)  # Valor de la URL encontrada en el archivo
-    tipo_archivo: Optional[str] = field(default=None)  # Tipo de archivo subido (PDF, Excel, CSV, etc.)
-    estado_subida: Optional[bool] = field(default=None)  # True si se subió a Drive correctamente
+    estado_url_archivo: Optional[bool] = field(
+        default=None
+    )  # True si se encontró la URL en el archivo, False si no
+    url_archivo: Optional[str] = field(
+        default=None
+    )  # Valor de la URL encontrada en el archivo
+    tipo_archivo: Optional[str] = field(
+        default=None
+    )  # Tipo de archivo subido (PDF, Excel, CSV, etc.)
+    estado_subida: Optional[bool] = field(
+        default=None
+    )  # True si se subió a Drive correctamente
     drive_url: Optional[str] = field(default=None)  # URL de acceso al archivo en Drive
     ruta_drive: Optional[str] = field(default=None)  # Ruta completa en Drive
+    ruta_informe_area: Optional[str] = field(
+        default=None
+    )  # Ruta local del informe Excel del área
+    error: Optional[str] = field(
+        default=None
+    )  # Mensaje de error si hubo fallo en la subida
     error: Optional[str] = field(default=None)  # Mensaje de error si hubo fallo en la subida
 
     def __str__(self):

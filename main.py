@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import src.google_drive as drive
 from src.services.downloader import descargar_pdf
+from src.services.excel_generator import generar_informe_excel_con_urls_drive
 from src.services.reader import extraer_url_desde_xlsx, leer_archivo_xlsx
 from src.services.scraper import (
     iniciar_sesion,
@@ -86,15 +87,66 @@ def procesamiento_excel(driver, registros):
 
 # Generar informe por Area agrupada
 def generar_informe_area(agrupados_por_area):
-    return none
+    """
+    Genera informes Excel resumen por área con URLs de Drive existentes
+
+    Args:
+        agrupados_por_area: Diccionario con áreas y sus registros
+
+    Returns:
+        dict: Estructura actualizada con rutas de informes
+    """
+    print("📊 Generando informes Excel resumen por área...")
+
+    # Obtener directorio de informes desde configuración
+    config = configuracion()
+    directorio_informes = config.get("informes", {}).get("directorio_local")
+
+    if not directorio_informes:
+        # Directorio por defecto si no está configurado
+        directorio_informes = os.path.join(os.path.dirname(__file__), "informes")
+
+    for nombre_area, datos_area in agrupados_por_area.items():
+        registros_area = datos_area
+
+        if not registros_area:
+            print(f"⚠️ Área '{nombre_area}' sin registros, omitiendo...")
+            continue
+
+        try:
+            print(
+                f"📋 Generando informe para área: {nombre_area} ({len(registros_area)} registros)"
+            )
+
+            # Generar informe Excel con URLs de Drive existentes
+            ruta_informe_local = generar_informe_excel_con_urls_drive(
+                registros_area=registros_area,
+                nombre_area=nombre_area,
+                directorio_salida=directorio_informes,
+            )
+
+            print(f"✅ Informe generado: {ruta_informe_local}")
+
+            # Asignar ruta del informe a cada registro del área
+            for registro in registros_area:
+                registro.ruta_informe_area = ruta_informe_local
+
+            print(f"✅ Ruta asignada a {len(registros_area)} registros del área")
+
+        except Exception as e:
+            print(f"❌ Error generando informe para área '{nombre_area}': {e}")
+            # Continuar con siguiente área
+            continue
+
+    print("📊 Generación de informes completada")
+    return agrupados_por_area
 
 
 # Asignar correos y enviar correos
 def asignacion_correo(registros):
-    agrupados_por_area = agrupar_por_area(registros)
-    agrupados_por_area = agrupados_por_area(agrupados_por_area)
+    agrupados_por_area_result = registros
 
-    asignar_correos_a_areas(agrupados_por_area)
+    asignar_correos_a_areas(agrupados_por_area_result)
     # cc = ["ltarrillo@santaelena.com"]
     cc = ["h.buddenberg@gmail.com"]
     # Obtener la fecha actual en formato ddmmyyyy
@@ -105,7 +157,7 @@ def asignacion_correo(registros):
 
     plantilla_html = cargar_plantilla()
 
-    for rut, data in agrupados_por_area.items():
+    for rut, data in agrupados_por_area_result.items():
         destinatarios = data["destinatarios"]
         registros = data["registros"]
 
@@ -113,10 +165,13 @@ def asignacion_correo(registros):
             print(f"⚠️ No se enviará correo. No hay destinatarios para {rut}.")
             continue
 
+        # Preparar archivos adjuntos y contenido del correo (FACTURAS)
         archivos_adjuntos = [
             registro.ruta_pdf for registro in registros if registro.estado_pdf
         ]
         pdfs_fallidos = [registro for registro in registros if not registro.estado_pdf]
+
+        ## ACA DEBERA IR EL ENVIO DEL INFORME Y COMENTAR EL ENVIO DE FACTURAS.  <--------------------------------
 
         var_mensaje, tabla_folios_fallidos = generar_contenido_html(rut, pdfs_fallidos)
 
@@ -342,10 +397,16 @@ def main():
 
     # Subir archivos a Google Drive
 
-    registros = copiar_drive(registros, ruta_archivo_procesado, ruta_drive)
+    registros_con_drive = copiar_drive(registros, ruta_archivo_procesado, ruta_drive)
 
-    # Asignar correos y enviar correos
-    asignacion_correo(registros["resultados"])
+    # Agrupar por área para informes y emails
+    agrupados_por_area = agrupar_por_area(registros_con_drive["resultados"])
+
+    # Generar informes Excel resumen (NUEVO)
+    agrupados_con_informes = generar_informe_area(agrupados_por_area)
+
+    # Asignar correos y enviar correos (con informes adjuntos)
+    asignacion_correo(agrupados_con_informes)
 
     # Mover el archivo procesado a la carpeta de descargas con fecha
     mover_procesados(ruta_archivo_procesado, config)
