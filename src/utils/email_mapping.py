@@ -1,122 +1,141 @@
+import os
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple, Union
+
 import pandas as pd
 import yaml
-import os
 
-# Cargar configuración desde config.yaml usando ruta absoluta
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# === Configuración global ===
+PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config.yaml")
 with open(CONFIG_PATH, "r", encoding="utf-8") as file:
-    config = yaml.safe_load(file)
+    config = yaml.safe_load(file) or {}
+
+RUTA_PLANTILLA = config.get("web_scraping", {}).get("plantilla_correo", "")
+RUTA_EXCEL_CORREOS = config.get("web_scraping", {}).get("areas_correos", "")
 
 
-
-
-RUTA_PLANTILLA = config["web_scraping"]["plantilla_correo"]
-
-def cargar_plantilla():
-        """Carga la plantilla HTML desde la ruta especificada en `config.yaml`."""
-        try:
-            with open(RUTA_PLANTILLA, "r", encoding="utf-8") as file:
-                return file.read()
-        except Exception as e:
-            print(f"❌ Error al cargar la plantilla HTML: {e}")
-            return None
-
-
-from datetime import datetime
-
-def generar_contenido_html(rut, pdfs_fallidos):
+# === Utilidades internas ===
+def cargar_plantilla() -> Optional[str]:
     """
-    Genera el mensaje y la tabla de PDFs fallidos en formato HTML.
-    
-    Args:
-        rut (str): RUT del proveedor.
-        pdfs_fallidos (list): Lista de registros que no pudieron descargar su PDF.
+    Devuelve el HTML base del correo desde la ruta configurada.
+    """
+    if not RUTA_PLANTILLA:
+        print("⚠️  No se definió 'plantilla_correo' en config.yaml.")
+        return None
 
-    Returns:
-        tuple: (var_mensaje, tabla_folios_fallidos)
+    try:
+        with open(RUTA_PLANTILLA, "r", encoding="utf-8") as file:
+            return file.read()
+    except Exception as e:
+        print(f"❌ Error al cargar la plantilla HTML: {e}")
+        return None
+
+
+def formatear_fecha_tabla(valor_raw: Union[str, None]) -> str:
+    """
+    Intenta parsear fechas provenientes de distintas fuentes y devuelve dd-mm-YYYY.
+    Si no coincide con ningún formato conocido, regresa el valor original.
+    """
+    valor_normalizado = str(valor_raw).strip() if valor_raw is not None else ""
+    if not valor_normalizado:
+        return ""
+
+    formatos = ["%Y-%m-%d %H:%M:%S", "%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"]
+    for formato in formatos:
+        try:
+            fecha = datetime.strptime(valor_normalizado, formato)
+            return fecha.strftime("%d-%m-%Y")
+        except ValueError:
+            continue
+
+    return valor_normalizado
+
+
+def generar_contenido_html(rut: str, pdfs_fallidos: List) -> Tuple[str, str]:
+    """
+    Construye el mensaje y la tabla HTML para los folios sin PDF.
     """
     var_mensaje = f"Estimado/a, adjunto los documentos descargados para el RUT {rut}."
-    fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    # Construcción de la tabla con los folios fallidos
     if pdfs_fallidos:
-        var_mensaje = "Junto con saludar, se adjuntan las facturas del día; además, se indica que la(s) siguiente(s) factura(s) no se encuentra(n) en IConstruye"
-        tabla_folios_fallidos = """
-        <table border="1" cellpadding="5" cellspacing="0">
-            <tr>
-                <th>Rut Proveedor</th>
-                <th>Razon Social</th> 
-                <th>Folio</th>
-                <th>Fecha Documento</th>
-            </tr>
-        """
+        var_mensaje = (
+            "Junto con saludar, se adjuntan las facturas del día; además, "
+            "se indica que la(s) siguiente(s) factura(s) no se encuentra(n) "
+            "en IConstruye"
+        )
+        tabla = [
+            '<table border="1" cellpadding="5" cellspacing="0">',
+            "    <tr>",
+            "        <th>Rut Proveedor</th>",
+            "        <th>Razon Social</th>",
+            "        <th>Folio</th>",
+            "        <th>Fecha Documento</th>",
+            "    </tr>",
+        ]
         for registro in pdfs_fallidos:
-            fecha_formateada = (
-                    datetime.strptime(registro.fecha_docto, "%Y-%m-%d %H:%M:%S").strftime("%d-%m-%Y")
-                    if registro.fecha_docto else ''
-                )
-            tabla_folios_fallidos += f"""
-            <tr>
-                <td>{registro.rut_proveedor}</td>
-                <td>{registro.razon_social}</td>
-                <td>{registro.folio}</td>
-                <td>{fecha_formateada}</td>
-            </tr>
-            """
-        tabla_folios_fallidos += "</table>"
-    else:
-        var_mensaje = "Junto con saludar, se adjuntan las facturas del día."
-        tabla_folios_fallidos = ""
+            tabla.append("    <tr>")
+            tabla.append(f"        <td>{registro.rut_proveedor}</td>")
+            tabla.append(f"        <td>{registro.razon_social}</td>")
+            tabla.append(f"        <td>{registro.folio}</td>")
+            tabla.append(
+                f"        <td>{formatear_fecha_tabla(registro.fecha_docto)}</td>"
+            )
+            tabla.append("    </tr>")
+        tabla.append("</table>")
+        return var_mensaje, "\n".join(tabla)
 
-    return var_mensaje, tabla_folios_fallidos
+    return "Junto con saludar, se adjuntan las facturas del día.", ""
 
 
-
-
-
-RUTA_EXCEL_CORREOS = config["web_scraping"]["areas_correos"]
-
-def cargar_correos_por_area():
+def cargar_correos_por_area() -> Dict[str, List[str]]:
     """
-    Carga los correos electrónicos por área desde un archivo Excel definido en `config.yaml`.
-
-    Returns:
-        dict: Diccionario con las áreas en mayúsculas como clave y listas de correos como valores.
+    Carga y normaliza los correos configurados por área desde Excel.
     """
-    df = pd.read_excel(RUTA_EXCEL_CORREOS, dtype=str)  # Asegurar que todo se lea como string
-    correos_por_area = {}
+    if not RUTA_EXCEL_CORREOS:
+        print("⚠️  No se definió 'areas_correos' en config.yaml.")
+        return {}
 
+    try:
+        df = pd.read_excel(RUTA_EXCEL_CORREOS, dtype=str)
+    except Exception as e:
+        print(f"❌ Error al cargar el Excel de correos por área: {e}")
+        return {}
+
+    correos_por_area: Dict[str, List[str]] = {}
     for _, row in df.iterrows():
-        area = str(row["Area"]).strip().upper()  # Normalizar a mayúsculas
-        correos = [email.strip() for email in str(row["Correos"]).split(",") if email.strip()]
-        correos_por_area[area] = correos
+        area = str(row.get("Area", "")).strip().upper()
+        correos = [
+            email.strip()
+            for email in str(row.get("Correos", "")).split(",")
+            if email.strip()
+        ]
+        if area:
+            correos_por_area[area] = correos
 
     return correos_por_area
 
 
-def asignar_correos_a_areas(agrupados_por_area):
+def asignar_correos_a_areas(
+    agrupados_por_area: Dict[str, Union[List, Dict]],
+) -> Dict[str, Dict]:
     """
-    Asigna los correos correspondientes a cada área usando el archivo Excel de configuración.
-
-    Args:
-        agrupados_por_area (dict): Diccionario con las áreas como clave y una lista de registros como valor.
-
-    Returns:
-        dict: Diccionario actualizado con los correos asignados.
+    Inyecta la lista de correos correspondientes a cada área,
+    preservando metadatos previamente adjuntos (p. ej., ruta del informe).
     """
-    correos_por_area = cargar_correos_por_area()  # Leer configuración desde Excel
+    correos_por_area = cargar_correos_por_area()
 
-    for area in agrupados_por_area.keys():
-        area_normalizada = area.upper()  # Asegurar que siempre se comparen en mayúsculas
-        if area_normalizada in correos_por_area:
-            agrupados_por_area[area] = {
-                "destinatarios": correos_por_area[area_normalizada],
-                "registros": agrupados_por_area[area]
-            }
+    for area, datos_area in list(agrupados_por_area.items()):
+        if isinstance(datos_area, dict):
+            estructura = datos_area
+            registros = datos_area.get("registros", [])
         else:
-            agrupados_por_area[area] = {
-                "destinatarios": [],
-                "registros": agrupados_por_area[area]
-            }
-    
+            estructura = {}
+            registros = datos_area
+
+        estructura["registros"] = registros
+        estructura["destinatarios"] = correos_por_area.get(area.upper(), [])
+        agrupados_por_area[area] = estructura
+
     return agrupados_por_area

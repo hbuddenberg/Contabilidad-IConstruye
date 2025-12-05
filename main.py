@@ -107,7 +107,12 @@ def generar_informe_area(agrupados_por_area):
         directorio_informes = os.path.join(os.path.dirname(__file__), "informes")
 
     for nombre_area, datos_area in agrupados_por_area.items():
-        registros_area = datos_area
+        if isinstance(datos_area, dict):
+            registros_area = datos_area.get("registros", [])
+            estructura_area = datos_area
+        else:
+            registros_area = datos_area
+            estructura_area = {"registros": registros_area}
 
         if not registros_area:
             print(f"⚠️ Área '{nombre_area}' sin registros, omitiendo...")
@@ -127,11 +132,10 @@ def generar_informe_area(agrupados_por_area):
 
             print(f"✅ Informe generado: {ruta_informe_local}")
 
-            # Asignar ruta del informe a cada registro del área
-            for registro in registros_area:
-                registro.ruta_informe_area = ruta_informe_local
+            estructura_area["ruta_informe_area"] = ruta_informe_local
+            agrupados_por_area[nombre_area] = estructura_area
 
-            print(f"✅ Ruta asignada a {len(registros_area)} registros del área")
+            print(f"✅ Ruta del informe registrada para área '{nombre_area}'")
 
         except Exception as e:
             print(f"❌ Error generando informe para área '{nombre_area}': {e}")
@@ -157,23 +161,27 @@ def asignacion_correo(registros):
 
     plantilla_html = cargar_plantilla()
 
-    for rut, data in agrupados_por_area_result.items():
+    for area, data in agrupados_por_area_result.items():
         destinatarios = data["destinatarios"]
         registros = data["registros"]
+        ruta_informe_area = data.get("ruta_informe_area")
 
         if not destinatarios:
-            print(f"⚠️ No se enviará correo. No hay destinatarios para {rut}.")
+            print(f"⚠️ No se enviará correo. No hay destinatarios para {area}.")
             continue
 
-        # Preparar archivos adjuntos y contenido del correo (FACTURAS)
-        archivos_adjuntos = [
-            registro.ruta_pdf for registro in registros if registro.estado_pdf
-        ]
+        if not ruta_informe_area:
+            print(
+                f"⚠️ Área '{area}' no tiene informe generado. Se omite el envío de correo."
+            )
+            continue
+
         pdfs_fallidos = [registro for registro in registros if not registro.estado_pdf]
 
         ## ACA DEBERA IR EL ENVIO DEL INFORME Y COMENTAR EL ENVIO DE FACTURAS.  <--------------------------------
+        archivos_adjuntos = [ruta_informe_area]
 
-        var_mensaje, tabla_folios_fallidos = generar_contenido_html(rut, pdfs_fallidos)
+        var_mensaje, tabla_folios_fallidos = generar_contenido_html(area, pdfs_fallidos)
 
         contenido_html = plantilla_html.replace("{{VAR_MENSAJE}}", var_mensaje)
         contenido_html = contenido_html.replace(
@@ -188,7 +196,9 @@ def asignacion_correo(registros):
             cc=cc,
         )
 
-    print(f"✅ Correo {'enviado' if enviado else 'NO enviado'} a {destinatarios}.")
+        print(
+            f"✅ Correo {'enviado' if enviado else 'NO enviado'} a {destinatarios} para área '{area}'."
+        )
 
 
 # Mover el archivo procesado a la carpeta de descargas con fecha

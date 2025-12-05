@@ -30,13 +30,9 @@ class Registro:
     )  # True si se subió a Drive correctamente
     drive_url: Optional[str] = field(default=None)  # URL de acceso al archivo en Drive
     ruta_drive: Optional[str] = field(default=None)  # Ruta completa en Drive
-    ruta_informe_area: Optional[str] = field(
-        default=None
-    )  # Ruta local del informe Excel del área
     error: Optional[str] = field(
         default=None
     )  # Mensaje de error si hubo fallo en la subida
-    error: Optional[str] = field(default=None)  # Mensaje de error si hubo fallo en la subida
 
     def __str__(self):
         estado_folio = "Encontrado" if self.estado_folio else "No encontrado"
