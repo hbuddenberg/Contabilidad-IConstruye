@@ -22,6 +22,10 @@ class Registro:
     url_archivo: Optional[str] = field(
         default=None
     )  # Valor de la URL encontrada en el archivo
+    estado_pdf: Optional[bool] = field(
+        default=None
+    )  # True si el PDF fue descargado correctamente, False si no
+    ruta_pdf: Optional[str] = field(default=None)  # Ruta del archivo PDF descargado
     tipo_archivo: Optional[str] = field(
         default=None
     )  # Tipo de archivo subido (PDF, Excel, CSV, etc.)

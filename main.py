@@ -161,6 +161,10 @@ def asignacion_correo(registros):
 
     plantilla_html = cargar_plantilla()
 
+    if not plantilla_html:
+        print("❌ No se pudo cargar la plantilla HTML. No se enviarán correos.")
+        return
+
     for area, data in agrupados_por_area_result.items():
         destinatarios = data["destinatarios"]
         registros = data["registros"]
@@ -246,6 +250,9 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
     # Recopilar archivos de cada registro
     print(f"📋 Recopilando archivos de {len(registros)} registros...")
 
+    # Lista para registros sin PDF que también deben incluirse en el resultado
+    registros_sin_pdf = []
+
     for registro in registros:
         # Determinar qué archivo subir (prioridad: PDF, Excel, CSV, texto plano)
         archivo_path = None
@@ -284,7 +291,16 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
             }
             print(f"   ✓ Folio {registro.folio}: {tipo} ({archivo_path.name})")
         else:
-            print(f"   ⚠ Folio {registro.folio}: Sin archivos")
+            # Registrar el registro sin PDF para incluirlo en los resultados
+            registro.estado_subida = False
+            registro.drive_url = None
+            registro.ruta_drive = None
+            registro.tipo_archivo = None
+            registro.error = "Sin PDF disponible para subir"
+            registros_sin_pdf.append(registro)
+            print(
+                f"   ⚠ Folio {registro.folio}: Sin archivos (estado_pdf={getattr(registro, 'estado_pdf', None)})"
+            )
 
     # Agregar Excel procesado
     if ruta_archivo_procesado and Path(ruta_archivo_procesado).exists():
@@ -292,8 +308,16 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
         print(f"   ✓ Excel procesado: {Path(ruta_archivo_procesado).name}")
 
     if not archivos_a_subir:
-        print("⚠️  No hay archivos para subir")
-        return {"exitosos": 0, "fallidos": len(registros)}
+        print("⚠️  No hay archivos para subir a Drive")
+        # Aún así retornamos todos los registros (sin PDF) para que se incluyan en informes
+        return {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "carpeta_destino": f"{ruta_drive}/{fecha_hoy}",
+            "exitosos": 0,
+            "fallidos": 0,
+            "sin_pdf": len(registros_sin_pdf),
+            "resultados": registros_sin_pdf,  # Incluir todos los registros sin PDF
+        }
 
     try:
         print(f"\n🚀 Subiendo {len(archivos_a_subir)} archivos...")
@@ -372,8 +396,12 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
                 resultados_por_registro.append(reg)
                 print(f"   ✗ {reg.razon_social[:40]}: {str(e)[:40]}")
 
+        # Combinar resultados: registros subidos + registros sin PDF
+        todos_los_resultados = resultados_por_registro + registros_sin_pdf
+
         print(f"\n{'=' * 60}")
-        print(f"📤 {exitosos}/{len(mapa_registros)} archivos subidos")
+        print(f"📤 {exitosos}/{len(mapa_registros)} archivos subidos a Drive")
+        print(f"⚠️  {len(registros_sin_pdf)} registros sin PDF (incluidos en informe)")
         print(f"📁 {ruta_drive}/{fecha_hoy}/[empresa]/archivo")
         print(f"{'=' * 60}\n")
 
@@ -382,12 +410,20 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
             "carpeta_destino": f"{ruta_drive}/{fecha_hoy}",
             "exitosos": exitosos,
             "fallidos": len(mapa_registros) - exitosos,
-            "resultados": resultados_por_registro,
+            "sin_pdf": len(registros_sin_pdf),
+            "resultados": todos_los_resultados,  # Incluye TODOS los registros
         }
 
     except Exception as e:
         print(f"\n❌ Error: {e}")
-        return {"exitosos": 0, "fallidos": len(registros), "error": str(e)}
+        # En caso de error, aún incluimos los registros sin PDF
+        return {
+            "exitosos": 0,
+            "fallidos": len(registros),
+            "sin_pdf": len(registros_sin_pdf) if "registros_sin_pdf" in locals() else 0,
+            "resultados": registros_sin_pdf if "registros_sin_pdf" in locals() else [],
+            "error": str(e),
+        }
 
 
 # Función principal
@@ -397,7 +433,11 @@ def main():
     ruta_drive = config["google_drive"]["carpeta_destino"]
 
     # Leer registros del archivo Excel
-    registros, ruta_archivo_procesado = obtener_excel()
+    resultado_excel = obtener_excel()
+    if resultado_excel is None:
+        print("❌ No se pudieron cargar registros. Finalizando.")
+        return
+    registros, ruta_archivo_procesado = resultado_excel
 
     # Iniciar sesión y Navegar a las dos URLs
     driver = scrapping()
@@ -409,8 +449,16 @@ def main():
 
     registros_con_drive = copiar_drive(registros, ruta_archivo_procesado, ruta_drive)
 
+    # Validar que hay resultados para procesar
+    resultados = registros_con_drive.get("resultados", [])
+    if not resultados:
+        print("⚠️ No hay registros para procesar después de copiar a Drive.")
+        mover_procesados(ruta_archivo_procesado, config)
+        print("=== Fin del Proceso (sin registros) ===\n")
+        return
+
     # Agrupar por área para informes y emails
-    agrupados_por_area = agrupar_por_area(registros_con_drive["resultados"])
+    agrupados_por_area = agrupar_por_area(resultados)
 
     # Generar informes Excel resumen (NUEVO)
     agrupados_con_informes = generar_informe_area(agrupados_por_area)
