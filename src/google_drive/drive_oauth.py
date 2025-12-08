@@ -45,7 +45,10 @@ TOKEN_FILE = SECRETS_DIR / "token.json"
 # - drive.readonly: leer contenido (permite descargar)
 # - metadata.readonly: solo metadatos
 # - drive.file: solo archivos creados/abiertos por la app (no lista todo)
-SCOPES = ["https://www.googleapis.com/auth/drive",'https://www.googleapis.com/auth/gmail.send']
+SCOPES = [
+    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/gmail.send",
+]
 
 # Tamaño de página para list()
 PAGE_SIZE = 100
@@ -94,9 +97,27 @@ def ensure_credentials() -> Credentials:
 
     if creds and creds.expired and creds.refresh_token:
         print("🔄 Credenciales expiradas. Intentando refrescar...")
-        creds.refresh(Request())
-        save_token(creds)
-        return creds
+        try:
+            creds.refresh(Request())
+            save_token(creds)
+            return creds
+        except Exception as e:
+            error_msg = str(e)
+            # Detectar error de token revocado/expirado
+            if (
+                "invalid_grant" in error_msg.lower()
+                or "token has been expired or revoked" in error_msg.lower()
+            ):
+                print(f"❌ Error: {error_msg}")
+                print("🗑️  Token revocado o expirado. Eliminando token.json...")
+                if TOKEN_FILE.exists():
+                    TOKEN_FILE.unlink()
+                    print("✅ token.json eliminado. Iniciando nueva autenticación...")
+                # Reintentar con flujo completo
+                creds = None
+            else:
+                # Si es otro error, re-lanzarlo
+                raise
 
     print("🔐 Iniciando flujo de consentimiento en el navegador...")
     flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_SECRETS_FILE), SCOPES)

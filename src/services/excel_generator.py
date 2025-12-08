@@ -67,6 +67,9 @@ def generar_informe_excel_con_urls_drive(
         "Área",
         "Estado Drive",
         "Tipo Archivo",
+        "Monto Neto",
+        "Monto IVA",
+        "Monto Total",
         "URL Factura Drive",
     ]
 
@@ -126,8 +129,41 @@ def generar_informe_excel_con_urls_drive(
         celda.font = font_datos
         celda.border = border_celda
 
-        # Columna H: URL Factura Drive (CLAVE)
+        # Columna H: Monto Neto
         celda = hoja_principal.cell(row=fila_idx, column=8)
+        if hasattr(registro, "monto_neto") and registro.monto_neto is not None:
+            celda.value = registro.monto_neto
+            celda.number_format = "#,##0"
+        else:
+            celda.value = ""
+        celda.font = font_datos
+        celda.border = border_celda
+        celda.alignment = openpyxl.styles.Alignment(horizontal="right")
+
+        # Columna I: Monto IVA
+        celda = hoja_principal.cell(row=fila_idx, column=9)
+        if hasattr(registro, "monto_iva") and registro.monto_iva is not None:
+            celda.value = registro.monto_iva
+            celda.number_format = "#,##0"
+        else:
+            celda.value = ""
+        celda.font = font_datos
+        celda.border = border_celda
+        celda.alignment = openpyxl.styles.Alignment(horizontal="right")
+
+        # Columna J: Monto Total
+        celda = hoja_principal.cell(row=fila_idx, column=10)
+        if hasattr(registro, "monto_total") and registro.monto_total is not None:
+            celda.value = registro.monto_total
+            celda.number_format = "#,##0"
+        else:
+            celda.value = ""
+        celda.font = font_datos
+        celda.border = border_celda
+        celda.alignment = openpyxl.styles.Alignment(horizontal="right")
+
+        # Columna K: URL Factura Drive (CLAVE)
+        celda = hoja_principal.cell(row=fila_idx, column=11)
         celda.value = registro.drive_url or ""
         celda.font = font_url
         celda.border = border_celda
@@ -140,7 +176,10 @@ def generar_informe_excel_con_urls_drive(
     hoja_principal.column_dimensions["E"].width = 15  # Área
     hoja_principal.column_dimensions["F"].width = 15  # Estado Drive
     hoja_principal.column_dimensions["G"].width = 15  # Tipo Archivo
-    hoja_principal.column_dimensions["H"].width = 50  # URL Drive
+    hoja_principal.column_dimensions["H"].width = 15  # Monto Neto
+    hoja_principal.column_dimensions["I"].width = 15  # Monto IVA
+    hoja_principal.column_dimensions["J"].width = 15  # Monto Total
+    hoja_principal.column_dimensions["K"].width = 50  # URL Drive
 
     # Determinar directorio de salida
     if directorio_salida is None:

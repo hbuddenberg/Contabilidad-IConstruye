@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import src.google_drive as drive
 from src.services.downloader import descargar_pdf
 from src.services.excel_generator import generar_informe_excel_con_urls_drive
+from src.services.pdf_extractor import extraer_datos_registros
 from src.services.reader import extraer_url_desde_xlsx, leer_archivo_xlsx
 from src.services.scraper import (
     iniciar_sesion,
@@ -80,8 +81,12 @@ def procesamiento_excel(driver, registros):
     print("\n🔍 Extrayendo URLs desde archivos descargados...\n")
     extraer_url_desde_xlsx(registros)
     descargar_pdf(registros)
-
     driver.quit()
+
+    # Extraer datos de los PDFs descargados
+    print("\n📄 Extrayendo datos de montos desde PDFs...\n")
+    extraer_datos_registros(registros)
+
     return registros
 
 
