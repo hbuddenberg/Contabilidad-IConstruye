@@ -14,12 +14,16 @@ google:
   clave: Fe*.2020
 
 correo:
+  destinatario_informe: goliverz1995@gmail.com
   cc: hans.buddenberg@smart-bots.cl
   cco: h.buddenberg@gmail.com
 
 informes:
   directorio_local: "/Volumes/Resources/Develop/SmartBots/Santa_Elena/Contabilidad/Contabilidad IConstruye/informes"
   nombre_archivo: "informe_resumen_{area}_{fecha}.xlsx"
+
+procesados:
+  carpeta_listos: "/Volumes/Resources/Develop/SmartBots/Santa_Elena/Contabilidad/Listos"
 
 google_drive:
   carpeta_destino: "SantaElena/IConstruye/Facturas"

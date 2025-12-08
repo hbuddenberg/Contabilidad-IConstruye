@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import src.google_drive as drive
 from src.services.downloader import descargar_pdf
-from src.services.excel_generator import generar_informe_excel_con_urls_drive
+from src.services.excel_updater import copiar_y_actualizar_excel
 from src.services.pdf_extractor import extraer_datos_registros
 from src.services.reader import extraer_url_desde_xlsx, leer_archivo_xlsx
 from src.services.scraper import (
@@ -19,13 +19,8 @@ from src.services.scraper import (
     navegar_a_ultima_pagina,
     procesar_folios,
 )
-from src.utils.email_mapping import (
-    asignar_correos_a_areas,
-    cargar_plantilla,
-    generar_contenido_html,
-)
+from src.utils.email_mapping import cargar_plantilla
 from src.utils.email_sender import enviar_correo_api
-from src.utils.grouping import agrupar_por_area
 
 
 # Cargar configuración para obtener carpeta de descargas usando ruta absoluta
@@ -90,145 +85,170 @@ def procesamiento_excel(driver, registros):
     return registros
 
 
-# Generar informe por Area agrupada
-def generar_informe_area(agrupados_por_area):
+# Enviar informe único a destinatario configurado
+def enviar_informe_unico(ruta_archivo_actualizado, config, registros):
     """
-    Genera informes Excel resumen por área con URLs de Drive existentes
+    Envía el archivo Excel actualizado a un único destinatario.
+    Incluye tabla de folios que no se pudieron procesar.
 
     Args:
-        agrupados_por_area: Diccionario con áreas y sus registros
+        ruta_archivo_actualizado: Ruta del archivo Excel actualizado con columnas Q-U
+        config: Configuración del sistema
+        registros: Lista de registros procesados para identificar fallidos
 
     Returns:
-        dict: Estructura actualizada con rutas de informes
+        bool: True si el correo se envió correctamente
     """
-    print("📊 Generando informes Excel resumen por área...")
+    print("\n📧 Preparando envío de correo con informe...")
 
-    # Obtener directorio de informes desde configuración
-    config = configuracion()
-    directorio_informes = config.get("informes", {}).get("directorio_local")
+    # Obtener destinatario desde config
+    destinatario = config.get("correo", {}).get("destinatario_informe")
+    cc = config.get("correo", {}).get("cc", "")
 
-    if not directorio_informes:
-        # Directorio por defecto si no está configurado
-        directorio_informes = os.path.join(os.path.dirname(__file__), "informes")
+    if not destinatario:
+        print("❌ No se encontró destinatario_informe en config.yaml")
+        return False
 
-    for nombre_area, datos_area in agrupados_por_area.items():
-        if isinstance(datos_area, dict):
-            registros_area = datos_area.get("registros", [])
-            estructura_area = datos_area
-        else:
-            registros_area = datos_area
-            estructura_area = {"registros": registros_area}
-
-        if not registros_area:
-            print(f"⚠️ Área '{nombre_area}' sin registros, omitiendo...")
-            continue
-
-        try:
-            print(
-                f"📋 Generando informe para área: {nombre_area} ({len(registros_area)} registros)"
-            )
-
-            # Generar informe Excel con URLs de Drive existentes
-            ruta_informe_local = generar_informe_excel_con_urls_drive(
-                registros_area=registros_area,
-                nombre_area=nombre_area,
-                directorio_salida=directorio_informes,
-            )
-
-            print(f"✅ Informe generado: {ruta_informe_local}")
-
-            estructura_area["ruta_informe_area"] = ruta_informe_local
-            agrupados_por_area[nombre_area] = estructura_area
-
-            print(f"✅ Ruta del informe registrada para área '{nombre_area}'")
-
-        except Exception as e:
-            print(f"❌ Error generando informe para área '{nombre_area}': {e}")
-            # Continuar con siguiente área
-            continue
-
-    print("📊 Generación de informes completada")
-    return agrupados_por_area
-
-
-# Asignar correos y enviar correos
-def asignacion_correo(registros):
-    agrupados_por_area_result = registros
-
-    asignar_correos_a_areas(agrupados_por_area_result)
-    # cc = ["ltarrillo@santaelena.com"]
-    cc = ["h.buddenberg@gmail.com"]
-    # Obtener la fecha actual en formato ddmmyyyy
+    # Formato del asunto
     fecha_asunto = datetime.datetime.now().strftime("%d%m%Y")
-
-    # Crear la variable con el formato (ddmmyyyyEXP)
     formato_asunto = f"({fecha_asunto}EXP)"
 
+    # Cargar plantilla HTML
     plantilla_html = cargar_plantilla()
 
     if not plantilla_html:
-        print("❌ No se pudo cargar la plantilla HTML. No se enviarán correos.")
-        return
+        print("❌ No se pudo cargar la plantilla HTML. No se enviará correo.")
+        return False
 
-    for area, data in agrupados_por_area_result.items():
-        destinatarios = data["destinatarios"]
-        registros = data["registros"]
-        ruta_informe_area = data.get("ruta_informe_area")
+    # Identificar registros fallidos (sin PDF o sin subir a Drive)
+    registros_fallidos = [
+        r
+        for r in registros
+        if not getattr(r, "estado_pdf", False) or not getattr(r, "estado_subida", False)
+    ]
 
-        if not destinatarios:
-            print(f"⚠️ No se enviará correo. No hay destinatarios para {area}.")
-            continue
+    # Generar mensaje
+    nombre_archivo = os.path.basename(ruta_archivo_actualizado)
+    mensaje = f"Se adjunta el informe de facturas procesadas: <strong>{nombre_archivo}</strong>"
 
-        if not ruta_informe_area:
-            print(
-                f"⚠️ Área '{area}' no tiene informe generado. Se omite el envío de correo."
-            )
-            continue
+    # Generar tabla de folios fallidos si hay
+    tabla_fallidos = ""
+    if registros_fallidos:
+        mensaje += f"<br><br>⚠️ <strong>{len(registros_fallidos)} folios no pudieron ser procesados completamente:</strong>"
 
-        pdfs_fallidos = [registro for registro in registros if not registro.estado_pdf]
+        tabla_fallidos = """
+        <table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; margin-top: 10px;">
+            <thead style="background-color: #f2f2f2;">
+                <tr>
+                    <th>Folio</th>
+                    <th>RUT Proveedor</th>
+                    <th>Razón Social</th>
+                    <th>Motivo</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
 
-        ## ACA DEBERA IR EL ENVIO DEL INFORME Y COMENTAR EL ENVIO DE FACTURAS.  <--------------------------------
-        archivos_adjuntos = [ruta_informe_area]
+        for reg in registros_fallidos:
+            # Determinar motivo del fallo
+            if not getattr(reg, "estado_pdf", False):
+                motivo = "Sin PDF descargado"
+            elif not getattr(reg, "estado_subida", False):
+                error = getattr(reg, "error", "") or "Error al subir"
+                motivo = f"No subido: {error[:50]}"
+            else:
+                motivo = "Error desconocido"
 
-        var_mensaje, tabla_folios_fallidos = generar_contenido_html(area, pdfs_fallidos)
+            razon_social = getattr(reg, "razon_social", "")[:40]
 
-        contenido_html = plantilla_html.replace("{{VAR_MENSAJE}}", var_mensaje)
-        contenido_html = contenido_html.replace(
-            "{{TABLA_FOLIOS_FALLIDOS}}", tabla_folios_fallidos
-        )
+            tabla_fallidos += f"""
+                <tr>
+                    <td>{reg.folio}</td>
+                    <td>{reg.rut_proveedor}</td>
+                    <td>{razon_social}</td>
+                    <td>{motivo}</td>
+                </tr>
+            """
 
-        enviado = enviar_correo_api(
-            destinatarios=destinatarios,
-            asunto=f"FACTURAS PARA APROBACIÓN {formato_asunto}",
-            cuerpo_html=contenido_html,
-            archivos_adjuntos=archivos_adjuntos,
-            cc=cc,
-        )
+        tabla_fallidos += """
+            </tbody>
+        </table>
+        """
+    else:
+        mensaje += "<br><br>✅ Todos los folios fueron procesados correctamente."
 
-        print(
-            f"✅ Correo {'enviado' if enviado else 'NO enviado'} a {destinatarios} para área '{area}'."
-        )
+    contenido_html = plantilla_html.replace("{{VAR_MENSAJE}}", mensaje)
+    contenido_html = contenido_html.replace("{{TABLA_FOLIOS_FALLIDOS}}", tabla_fallidos)
+
+    # Enviar correo
+    print(f"   📤 Enviando a: {destinatario}")
+    if cc:
+        print(f"   📤 CC: {cc}")
+
+    enviado = enviar_correo_api(
+        destinatarios=[destinatario],
+        asunto=f"FACTURAS PARA APROBACIÓN {formato_asunto}",
+        cuerpo_html=contenido_html,
+        archivos_adjuntos=[ruta_archivo_actualizado],
+        cc=[cc] if cc else None,
+    )
+
+    if enviado:
+        print(f"✅ Correo enviado correctamente a {destinatario}")
+    else:
+        print(f"❌ Error al enviar correo a {destinatario}")
+
+    return enviado
 
 
-# Mover el archivo procesado a la carpeta de descargas con fecha
-def mover_procesados(ruta_archivo_procesado, config):
-    # Mover el archivo procesado a la carpeta de descargas con fecha
-    if ruta_archivo_procesado:
+# Mover archivos procesados a carpeta Listos con fecha/hora
+def mover_archivos_procesados(
+    ruta_archivo_original, ruta_archivo_actualizado, carpeta_listos, fecha, hora
+):
+    """
+    Mueve el archivo original y el actualizado a la carpeta de procesados (Listos).
+
+    La carpeta de destino tiene estructura:
+    Listos/{fecha}/{hora}/
+    Ejemplo: Listos/2025-12-08/20.00.00/
+
+    Args:
+        ruta_archivo_original: Ruta del archivo original (Por Hacer/SEMANA 40.xlsx)
+        ruta_archivo_actualizado: Ruta del archivo actualizado (informes/SEMANA 40_timestamp.xlsx)
+        carpeta_listos: Carpeta base de procesados (desde config.yaml)
+        fecha: Fecha de ejecución (formato: 2025-12-08)
+        hora: Hora de ejecución (formato: 20.00.00)
+    """
+    print("\n📁 Moviendo archivos a carpeta de procesados (Listos)...")
+
+    # Crear estructura: Listos/{fecha}/{hora}/
+    carpeta_fecha = os.path.join(carpeta_listos, fecha)
+    carpeta_destino = os.path.join(carpeta_fecha, hora)
+    os.makedirs(carpeta_destino, exist_ok=True)
+
+    print(f"   📂 Carpeta destino: {carpeta_destino}")
+
+    # Mover archivo original
+    if ruta_archivo_original and os.path.exists(ruta_archivo_original):
         try:
-            fecha_hoy = datetime.datetime.now().strftime("%Y-%m-%d")
-            carpeta_descargas = config["web_scraping"]["carpeta_descargas"]
-            carpeta_con_fecha = os.path.join(carpeta_descargas, fecha_hoy)
-            os.makedirs(carpeta_con_fecha, exist_ok=True)
-
-            # Nombre del archivo original
-            nombre_archivo = os.path.basename(ruta_archivo_procesado)
-            destino_archivo = os.path.join(carpeta_con_fecha, nombre_archivo)
-
-            # Mover el archivo
-            shutil.move(ruta_archivo_procesado, destino_archivo)
-            print(f"✅ Archivo procesado movido a: {destino_archivo}")
+            nombre_original = os.path.basename(ruta_archivo_original)
+            destino_original = os.path.join(carpeta_destino, nombre_original)
+            shutil.move(ruta_archivo_original, destino_original)
+            print(f"   ✅ Archivo original movido: {nombre_original}")
         except Exception as e:
-            print(f"⚠️ Error al mover el archivo procesado: {e}")
+            print(f"   ⚠️ Error al mover archivo original: {e}")
+
+    # Mover archivo actualizado
+    if ruta_archivo_actualizado and os.path.exists(ruta_archivo_actualizado):
+        try:
+            nombre_actualizado = os.path.basename(ruta_archivo_actualizado)
+            destino_actualizado = os.path.join(carpeta_destino, nombre_actualizado)
+            shutil.move(ruta_archivo_actualizado, destino_actualizado)
+            print(f"   ✅ Archivo actualizado movido: {nombre_actualizado}")
+        except Exception as e:
+            print(f"   ⚠️ Error al mover archivo actualizado: {e}")
+
+    print(f"📁 Archivos procesados guardados en: {carpeta_destino}")
 
 
 # Subir archivos a Google Drive
@@ -433,49 +453,106 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
 
 # Función principal
 def main():
-    # Cargar configuración para obtener carpeta de descargas usando ruta absoluta
+    """
+    Función principal del sistema de procesamiento de facturas.
+
+    Flujo:
+    1. Leer Excel original de "Por Hacer"
+    2. Scraping en IConstruye
+    3. Descargar PDFs y extraer montos
+    4. Subir a Google Drive
+    5. Copiar y actualizar Excel con columnas Q-U
+    6. Enviar correo a destinatario único
+    7. Mover archivos a carpeta procesados (fecha/hora)
+    """
+    print("\n" + "=" * 60)
+    print("🚀 INICIANDO PROCESO DE FACTURAS")
+    print("=" * 60 + "\n")
+
+    # Generar fecha y hora para la ejecución
+    ahora = datetime.datetime.now()
+    fecha_ejecucion = ahora.strftime("%Y-%m-%d")
+    hora_ejecucion = ahora.strftime("%H.%M.%S")
+    timestamp = f"{fecha_ejecucion}_{hora_ejecucion}"
+    print(f"⏰ Fecha: {fecha_ejecucion} | Hora: {hora_ejecucion}")
+
+    # Cargar configuración
     config = configuracion()
     ruta_drive = config["google_drive"]["carpeta_destino"]
+    directorio_informes = config.get("informes", {}).get("directorio_local")
+    carpeta_listos = config.get("procesados", {}).get("carpeta_listos")
 
-    # Leer registros del archivo Excel
+    if not carpeta_listos:
+        # Fallback a carpeta por defecto si no está configurada
+        carpeta_listos = (
+            "/Volumes/Resources/Develop/SmartBots/Santa_Elena/Contabilidad/Listos"
+        )
+        print(f"⚠️ carpeta_listos no configurada, usando: {carpeta_listos}")
+
+    if not directorio_informes:
+        directorio_informes = os.path.join(os.path.dirname(__file__), "informes")
+
+    # 1. Leer registros del archivo Excel original
+    print("\n📖 Paso 1: Leyendo archivo Excel original...")
     resultado_excel = obtener_excel()
     if resultado_excel is None:
         print("❌ No se pudieron cargar registros. Finalizando.")
         return
-    registros, ruta_archivo_procesado = resultado_excel
+    registros, ruta_archivo_original = resultado_excel
+    print(f"   ✅ {len(registros)} registros cargados desde: {ruta_archivo_original}")
 
-    # Iniciar sesión y Navegar a las dos URLs
+    # 2. Scraping en IConstruye
+    print("\n🌐 Paso 2: Iniciando scraping en IConstruye...")
     driver = scrapping()
+    if driver is None:
+        print("❌ Error en scraping. Finalizando.")
+        return
 
-    # Procesar folios (buscar y actualizar estado)
+    # 3. Procesar folios (buscar, descargar PDFs, extraer montos)
+    print("\n🔄 Paso 3: Procesando folios...")
     registros = procesamiento_excel(driver, registros)
 
-    # Subir archivos a Google Drive
-
-    registros_con_drive = copiar_drive(registros, ruta_archivo_procesado, ruta_drive)
+    # 4. Subir archivos a Google Drive
+    print("\n☁️ Paso 4: Subiendo archivos a Google Drive...")
+    registros_con_drive = copiar_drive(registros, ruta_archivo_original, ruta_drive)
 
     # Validar que hay resultados para procesar
     resultados = registros_con_drive.get("resultados", [])
     if not resultados:
         print("⚠️ No hay registros para procesar después de copiar a Drive.")
-        mover_procesados(ruta_archivo_procesado, config)
+        mover_archivos_procesados(
+            ruta_archivo_original, None, carpeta_listos, fecha_ejecucion, hora_ejecucion
+        )
         print("=== Fin del Proceso (sin registros) ===\n")
         return
 
-    # Agrupar por área para informes y emails
-    agrupados_por_area = agrupar_por_area(resultados)
+    # 5. Copiar y actualizar Excel con nuevas columnas (Q-U)
+    print("\n📊 Paso 5: Actualizando Excel con datos extraídos...")
+    ruta_archivo_actualizado = copiar_y_actualizar_excel(
+        ruta_archivo_original=ruta_archivo_original,
+        registros=resultados,
+        directorio_salida=directorio_informes,
+        timestamp=timestamp,
+    )
 
-    # Generar informes Excel resumen (NUEVO)
-    agrupados_con_informes = generar_informe_area(agrupados_por_area)
+    # 6. Enviar correo a destinatario único
+    print("\n📧 Paso 6: Enviando correo con informe...")
+    enviar_informe_unico(ruta_archivo_actualizado, config, resultados)
 
-    # Asignar correos y enviar correos (con informes adjuntos)
-    asignacion_correo(agrupados_con_informes)
+    # 7. Mover archivos a carpeta de procesados (Listos/fecha/hora)
+    print("\n📁 Paso 7: Moviendo archivos a Listos...")
+    mover_archivos_procesados(
+        ruta_archivo_original,
+        ruta_archivo_actualizado,
+        carpeta_listos,
+        fecha_ejecucion,
+        hora_ejecucion,
+    )
 
-    # Mover el archivo procesado a la carpeta de descargas con fecha
-    mover_procesados(ruta_archivo_procesado, config)
-
-    print("\n✅ Todo el proceso se ejecutó correctamente.")
-    print("=== Fin del Proceso ===\n")
+    print("\n" + "=" * 60)
+    print("✅ PROCESO COMPLETADO EXITOSAMENTE")
+    print(f"📁 Archivos en: {carpeta_listos}/{fecha_ejecucion}/{hora_ejecucion}/")
+    print("=" * 60 + "\n")
 
 
 # Ejecutar la función principal
