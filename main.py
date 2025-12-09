@@ -577,18 +577,9 @@ def procesar_un_archivo(
     print("\n📧 Paso 6: Enviando correo con informe...")
     enviar_informe_unico(ruta_archivo_actualizado, config, resultados)
 
-    # 7. Mover archivos a carpeta de procesados local (Listos/fecha/hora)
-    print("\n📁 Paso 7: Moviendo archivos a Listos...")
-    mover_archivos_procesados(
-        ruta_archivo_original,
-        ruta_archivo_actualizado,
-        carpeta_listos,
-        fecha_ejecucion,
-        hora_ejecucion,
-    )
-
-    # 8. Mover archivo original en Drive a "Procesados" y subir actualizado
-    print("\n☁️ Paso 8: Moviendo archivo en Drive a Procesados...")
+    # 7. Mover archivo original en Drive a "Procesados" y subir actualizado
+    # (ANTES de mover localmente, para que el archivo aún exista)
+    print("\n☁️ Paso 7: Moviendo archivo en Drive a Procesados...")
     finalizar_archivo_en_drive(
         drive_service,
         archivo["id"],
@@ -597,6 +588,16 @@ def procesar_un_archivo(
         fecha=fecha_ejecucion,
         hora=hora_ejecucion,
         ruta_archivo_actualizado=ruta_archivo_actualizado,
+    )
+
+    # 8. Mover archivos a carpeta de procesados local (Listos/fecha/hora)
+    print("\n📁 Paso 8: Moviendo archivos a Listos...")
+    mover_archivos_procesados(
+        ruta_archivo_original,
+        ruta_archivo_actualizado,
+        carpeta_listos,
+        fecha_ejecucion,
+        hora_ejecucion,
     )
 
     print(f"\n✅ Archivo {archivo['name']} procesado exitosamente")
@@ -621,8 +622,8 @@ def main():
     4. Subir facturas a Google Drive
     5. Copiar y actualizar Excel con columnas Q-U
     6. Enviar correo a destinatario único
-    7. Mover archivos a carpeta procesados local (fecha/hora)
-    8. Mover archivo original y subir actualizado a Drive "Procesados"
+    7. Mover archivo original y subir actualizado a Drive "Procesados"
+    8. Mover archivos a carpeta procesados local (fecha/hora)
     """
     print("\n" + "=" * 60)
     print("🚀 INICIANDO PROCESO DE FACTURAS")
