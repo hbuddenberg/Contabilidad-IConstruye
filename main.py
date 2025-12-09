@@ -257,16 +257,15 @@ def mover_archivos_procesados(
 
 
 # Subir archivos a Google Drive
-def copiar_drive(registros, ruta_archivo_procesado, ruta_drive, fecha=None, hora=None):
+def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
     """
     Sube archivos de registros a Google Drive organizados por fecha y hora.
+    Genera su propio timestamp al momento de subir (hora real de subida).
 
     Args:
         registros: Lista de objetos Registro con archivos descargados
         ruta_archivo_procesado: Ruta del archivo Excel procesado
         ruta_drive: Ruta base en Drive (ej: "SantaElena/IConstruye/Facturas")
-        fecha: Fecha de ejecución (formato: YYYY-MM-DD). Si es None, usa fecha actual.
-        hora: Hora de ejecución (formato: HH.MM.SS). Si es None, usa hora actual.
 
     Returns:
         dict: Resumen con resultados de subida por registro
@@ -275,11 +274,11 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive, fecha=None, hora
 
     print("\n📤 Iniciando subida de archivos a Google Drive...")
 
-    # Usar fecha/hora proporcionadas o actuales
-    if not fecha:
-        fecha = datetime.datetime.now().strftime("%Y-%m-%d")
-    if not hora:
-        hora = datetime.datetime.now().strftime("%H.%M.%S")
+    # Generar timestamp propio al momento de subir (hora real de subida)
+    ahora_subida = datetime.datetime.now()
+    fecha = ahora_subida.strftime("%Y-%m-%d")
+    hora = ahora_subida.strftime("%H.%M.%S")
+    print(f"   ⏰ Hora de subida de facturas: {fecha} {hora}")
     archivos_a_subir = []
     mapa_registros = {}  # Mapeo: nombre_archivo -> registro
 
@@ -498,15 +497,16 @@ def procesar_un_archivo(
     Returns:
         bool: True si se procesó correctamente, False si hubo error
     """
-    # Generar fecha y hora únicas para este archivo
-    ahora = datetime.datetime.now()
-    fecha_ejecucion = ahora.strftime("%Y-%m-%d")
-    hora_ejecucion = ahora.strftime("%H.%M.%S")
+    # Generar fecha y hora de INICIO para este archivo
+    # Esta hora se usa para Listos y Procesados (Excel original y actualizado)
+    ahora_inicio = datetime.datetime.now()
+    fecha_ejecucion = ahora_inicio.strftime("%Y-%m-%d")
+    hora_ejecucion = ahora_inicio.strftime("%H.%M.%S")  # Hora de inicio
     timestamp = f"{fecha_ejecucion}_{hora_ejecucion}"
 
     print("\n" + "=" * 60)
     print(f"📄 PROCESANDO ARCHIVO {archivo_numero}/{total_archivos}: {archivo['name']}")
-    print(f"⏰ Fecha: {fecha_ejecucion} | Hora: {hora_ejecucion}")
+    print(f"⏰ Fecha: {fecha_ejecucion} | Hora inicio: {hora_ejecucion}")
     print("=" * 60)
 
     # 0.1 Descargar el archivo (limpia carpetas locales)
@@ -540,10 +540,9 @@ def procesar_un_archivo(
     registros = procesamiento_excel(driver, registros)
 
     # 4. Subir archivos a Google Drive (Facturas)
+    # Nota: copiar_drive genera su propia hora de subida (hora real)
     print("\n☁️ Paso 4: Subiendo archivos a Google Drive...")
-    registros_con_drive = copiar_drive(
-        registros, ruta_archivo_original, ruta_drive, fecha_ejecucion, hora_ejecucion
-    )
+    registros_con_drive = copiar_drive(registros, ruta_archivo_original, ruta_drive)
 
     # Validar que hay resultados para procesar
     resultados = registros_con_drive.get("resultados", [])
