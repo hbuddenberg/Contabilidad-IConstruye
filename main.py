@@ -11,8 +11,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import src.google_drive as drive
 from src.services.downloader import descargar_pdf
 from src.services.drive_source import (
+    descargar_un_archivo_de_drive,
     finalizar_archivo_en_drive,
-    obtener_archivo_desde_drive,
+    obtener_archivos_desde_drive,
 )
 from src.services.excel_updater import copiar_y_actualizar_excel
 from src.services.pdf_extractor import extraer_datos_registros
@@ -467,65 +468,63 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive, fecha=None, hora
         }
 
 
-# Función principal
-def main():
+def procesar_un_archivo(
+    archivo: dict,
+    drive_service,
+    folder_id_drive: str,
+    destino_local: str,
+    config: dict,
+    ruta_drive: str,
+    directorio_informes: str,
+    carpeta_listos: str,
+    archivo_numero: int,
+    total_archivos: int,
+):
     """
-    Función principal del sistema de procesamiento de facturas.
+    Procesa un único archivo Excel desde Google Drive.
 
-    Flujo:
-    0. Buscar y descargar archivo desde Google Drive (Por Hacer remoto)
-    1. Leer Excel original de "Por Hacer" local
-    2. Scraping en IConstruye
-    3. Descargar PDFs y extraer montos
-    4. Subir a Google Drive
-    5. Copiar y actualizar Excel con columnas Q-U
-    6. Enviar correo a destinatario único
-    7. Mover archivos a carpeta procesados (fecha/hora)
-    8. Mover archivo procesado en Drive a carpeta "Procesados"
+    Args:
+        archivo: Dict con {id, name} del archivo
+        drive_service: Servicio de Google Drive autenticado
+        folder_id_drive: ID de la carpeta origen en Drive
+        destino_local: Ruta local para descargar
+        config: Configuración del sistema
+        ruta_drive: Ruta base en Drive para Facturas
+        directorio_informes: Directorio para informes
+        carpeta_listos: Carpeta local de archivos procesados
+        archivo_numero: Número del archivo actual (para mostrar progreso)
+        total_archivos: Total de archivos a procesar
+
+    Returns:
+        bool: True si se procesó correctamente, False si hubo error
     """
-    print("\n" + "=" * 60)
-    print("🚀 INICIANDO PROCESO DE FACTURAS")
-    print("=" * 60 + "\n")
-
-    # Generar fecha y hora para la ejecución
+    # Generar fecha y hora únicas para este archivo
     ahora = datetime.datetime.now()
     fecha_ejecucion = ahora.strftime("%Y-%m-%d")
     hora_ejecucion = ahora.strftime("%H.%M.%S")
     timestamp = f"{fecha_ejecucion}_{hora_ejecucion}"
+
+    print("\n" + "=" * 60)
+    print(f"📄 PROCESANDO ARCHIVO {archivo_numero}/{total_archivos}: {archivo['name']}")
     print(f"⏰ Fecha: {fecha_ejecucion} | Hora: {hora_ejecucion}")
+    print("=" * 60)
 
-    # Cargar configuración
-    config = configuracion()
-    ruta_drive = config["google_drive"]["carpeta_destino"]
-    directorio_informes = config.get("informes", {}).get("directorio_local")
-    carpeta_listos = config.get("procesados", {}).get("carpeta_listos")
-
-    if not carpeta_listos:
-        # Fallback a carpeta por defecto si no está configurada
-        carpeta_listos = (
-            "/Volumes/Resources/Develop/SmartBots/Santa_Elena/Contabilidad/Listos"
-        )
-        print(f"⚠️ carpeta_listos no configurada, usando: {carpeta_listos}")
-
-    if not directorio_informes:
-        directorio_informes = os.path.join(os.path.dirname(__file__), "informes")
-
-    # 0. Buscar y descargar archivo desde Google Drive
-    print("\n☁️ Paso 0: Buscando archivos en Google Drive...")
-    drive_service, file_id_drive, folder_id_drive, ruta_descargada = (
-        obtener_archivo_desde_drive(config)
+    # 0.1 Descargar el archivo (limpia carpetas locales)
+    print("\n📥 Paso 0.1: Descargando archivo desde Drive...")
+    ruta_descargada = descargar_un_archivo_de_drive(
+        drive_service, archivo, destino_local, config
     )
 
-    if not file_id_drive:
-        print("📭 No hay archivos para procesar en Google Drive. Finalizando.")
-        return
+    if not ruta_descargada:
+        print(f"❌ Error al descargar {archivo['name']}. Saltando...")
+        return False
 
-    # 1. Leer registros del archivo Excel original (ahora descargado de Drive)
+    # 1. Leer registros del archivo Excel original
     print("\n📖 Paso 1: Leyendo archivo Excel original...")
     resultado_excel = obtener_excel()
     if resultado_excel is None:
-        print("❌ No se pudieron cargar registros. Finalizando.")
-        return
+        print("❌ No se pudieron cargar registros. Saltando archivo...")
+        return False
     registros, ruta_archivo_original = resultado_excel
     print(f"   ✅ {len(registros)} registros cargados desde: {ruta_archivo_original}")
 
@@ -533,14 +532,14 @@ def main():
     print("\n🌐 Paso 2: Iniciando scraping en IConstruye...")
     driver = scrapping()
     if driver is None:
-        print("❌ Error en scraping. Finalizando.")
-        return
+        print("❌ Error en scraping. Saltando archivo...")
+        return False
 
     # 3. Procesar folios (buscar, descargar PDFs, extraer montos)
     print("\n🔄 Paso 3: Procesando folios...")
     registros = procesamiento_excel(driver, registros)
 
-    # 4. Subir archivos a Google Drive
+    # 4. Subir archivos a Google Drive (Facturas)
     print("\n☁️ Paso 4: Subiendo archivos a Google Drive...")
     registros_con_drive = copiar_drive(
         registros, ruta_archivo_original, ruta_drive, fecha_ejecucion, hora_ejecucion
@@ -553,8 +552,17 @@ def main():
         mover_archivos_procesados(
             ruta_archivo_original, None, carpeta_listos, fecha_ejecucion, hora_ejecucion
         )
-        print("=== Fin del Proceso (sin registros) ===\n")
-        return
+        # Aún así movemos el archivo en Drive a Procesados
+        finalizar_archivo_en_drive(
+            drive_service,
+            archivo["id"],
+            folder_id_drive,
+            config,
+            fecha=fecha_ejecucion,
+            hora=hora_ejecucion,
+            ruta_archivo_actualizado=None,
+        )
+        return True
 
     # 5. Copiar y actualizar Excel con nuevas columnas (Q-U)
     print("\n📊 Paso 5: Actualizando Excel con datos extraídos...")
@@ -569,7 +577,7 @@ def main():
     print("\n📧 Paso 6: Enviando correo con informe...")
     enviar_informe_unico(ruta_archivo_actualizado, config, resultados)
 
-    # 7. Mover archivos a carpeta de procesados (Listos/fecha/hora)
+    # 7. Mover archivos a carpeta de procesados local (Listos/fecha/hora)
     print("\n📁 Paso 7: Moviendo archivos a Listos...")
     mover_archivos_procesados(
         ruta_archivo_original,
@@ -579,26 +587,110 @@ def main():
         hora_ejecucion,
     )
 
-    # 8. Mover archivo procesado en Drive a carpeta "Procesados"
+    # 8. Mover archivo original en Drive a "Procesados" y subir actualizado
     print("\n☁️ Paso 8: Moviendo archivo en Drive a Procesados...")
-    if drive_service and file_id_drive and folder_id_drive:
-        finalizar_archivo_en_drive(
-            drive_service,
-            file_id_drive,
-            folder_id_drive,
-            config,
-            fecha=fecha_ejecucion,
-            hora=hora_ejecucion,
-        )
-    else:
-        print("⚠️ No se pudo mover el archivo en Drive (faltan datos de conexión)")
-
-    print("\n" + "=" * 60)
-    print("✅ PROCESO COMPLETADO EXITOSAMENTE")
-    print(
-        f"📁 Archivos locales en: {carpeta_listos}/{fecha_ejecucion}/{hora_ejecucion}/"
+    finalizar_archivo_en_drive(
+        drive_service,
+        archivo["id"],
+        folder_id_drive,
+        config,
+        fecha=fecha_ejecucion,
+        hora=hora_ejecucion,
+        ruta_archivo_actualizado=ruta_archivo_actualizado,
     )
-    print(f"☁️ Archivo en Drive movido a: Procesados/{fecha_ejecucion}/")
+
+    print(f"\n✅ Archivo {archivo['name']} procesado exitosamente")
+    print(f"   📁 Local: {carpeta_listos}/{fecha_ejecucion}/{hora_ejecucion}/")
+    print(f"   ☁️ Drive: Procesados/{fecha_ejecucion}/{hora_ejecucion}/")
+
+    return True
+
+
+# Función principal
+def main():
+    """
+    Función principal del sistema de procesamiento de facturas.
+    Procesa TODOS los archivos encontrados en Google Drive uno por uno.
+
+    Flujo por cada archivo:
+    0. Buscar archivos en Google Drive (Por Hacer remoto)
+    0.1 Descargar archivo a carpeta local (limpia carpetas)
+    1. Leer Excel original de "Por Hacer" local
+    2. Scraping en IConstruye
+    3. Descargar PDFs y extraer montos
+    4. Subir facturas a Google Drive
+    5. Copiar y actualizar Excel con columnas Q-U
+    6. Enviar correo a destinatario único
+    7. Mover archivos a carpeta procesados local (fecha/hora)
+    8. Mover archivo original y subir actualizado a Drive "Procesados"
+    """
+    print("\n" + "=" * 60)
+    print("🚀 INICIANDO PROCESO DE FACTURAS")
+    print("=" * 60 + "\n")
+
+    # Cargar configuración
+    config = configuracion()
+    ruta_drive = config["google_drive"]["carpeta_destino"]
+    directorio_informes = config.get("informes", {}).get("directorio_local")
+    carpeta_listos = config.get("procesados", {}).get("carpeta_listos")
+
+    if not carpeta_listos:
+        carpeta_listos = (
+            "/Volumes/Resources/Develop/SmartBots/Santa_Elena/Contabilidad/Listos"
+        )
+        print(f"⚠️ carpeta_listos no configurada, usando: {carpeta_listos}")
+
+    if not directorio_informes:
+        directorio_informes = os.path.join(os.path.dirname(__file__), "informes")
+
+    # 0. Buscar TODOS los archivos en Google Drive
+    print("\n☁️ Paso 0: Buscando archivos en Google Drive...")
+    drive_service, archivos, folder_id_drive, destino_local = (
+        obtener_archivos_desde_drive(config)
+    )
+
+    if not archivos:
+        print("📭 No hay archivos para procesar en Google Drive. Finalizando.")
+        return
+
+    total_archivos = len(archivos)
+    print(f"\n📋 Se procesarán {total_archivos} archivo(s):")
+    for i, archivo in enumerate(archivos, 1):
+        print(f"   {i}. {archivo['name']}")
+
+    # Procesar cada archivo uno por uno
+    archivos_exitosos = 0
+    archivos_fallidos = 0
+
+    for i, archivo in enumerate(archivos, 1):
+        try:
+            exito = procesar_un_archivo(
+                archivo=archivo,
+                drive_service=drive_service,
+                folder_id_drive=folder_id_drive,
+                destino_local=destino_local,
+                config=config,
+                ruta_drive=ruta_drive,
+                directorio_informes=directorio_informes,
+                carpeta_listos=carpeta_listos,
+                archivo_numero=i,
+                total_archivos=total_archivos,
+            )
+            if exito:
+                archivos_exitosos += 1
+            else:
+                archivos_fallidos += 1
+        except Exception as e:
+            print(f"\n❌ Error procesando {archivo['name']}: {e}")
+            archivos_fallidos += 1
+
+    # Resumen final
+    print("\n" + "=" * 60)
+    print("🏁 RESUMEN FINAL DEL PROCESO")
+    print("=" * 60)
+    print(f"   📊 Total archivos: {total_archivos}")
+    print(f"   ✅ Exitosos: {archivos_exitosos}")
+    print(f"   ❌ Fallidos: {archivos_fallidos}")
     print("=" * 60 + "\n")
 
 

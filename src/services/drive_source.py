@@ -278,16 +278,17 @@ def mover_archivo_procesado_drive(
         return False
 
 
-def obtener_archivo_desde_drive(config: dict) -> tuple:
+def obtener_archivos_desde_drive(config: dict) -> tuple:
     """
-    Función principal que busca y descarga UN archivo desde Google Drive.
-    Limpia la carpeta local antes de descargar.
+    Función que busca y lista TODOS los archivos desde Google Drive.
+    Limpia las carpetas locales antes de iniciar.
 
     Args:
         config: Diccionario de configuración con las rutas de Drive
 
     Returns:
-        tuple: (service, file_id, folder_id, ruta_local) o (None, None, None, None) si no hay archivos
+        tuple: (service, archivos_lista, folder_id, destino_local) o (None, [], None, None) si no hay archivos
+               archivos_lista es una lista de dicts con {id, name, mimeType}
     """
     try:
         # Obtener configuración de Drive
@@ -301,14 +302,11 @@ def obtener_archivo_desde_drive(config: dict) -> tuple:
 
         if not destino_local:
             print("❌ No se configuró el destino local para archivos")
-            return None, None, None, None
+            return None, [], None, None
 
         print(f"\n☁️ Conectando con Google Drive...")
         print(f"   📂 Carpeta origen: {ruta_por_hacer}")
         print(f"   📁 Destino local: {destino_local}")
-
-        # Limpiar todas las carpetas de trabajo antes de descargar
-        limpiar_carpetas_trabajo(config)
 
         # Autenticar con Drive
         creds = drive.ensure_credentials()
@@ -319,17 +317,44 @@ def obtener_archivo_desde_drive(config: dict) -> tuple:
 
         if not archivos:
             print("📭 No hay archivos para procesar en Google Drive")
-            return None, None, None, None
+            return None, [], None, None
 
-        # Tomar el primer archivo (uno a la vez)
-        archivo = archivos[0]
-        file_id = archivo["id"]
-        file_name = archivo["name"]
-
-        print(f"\n📥 Procesando: {file_name}")
+        print(f"\n📋 Se encontraron {len(archivos)} archivo(s) para procesar")
 
         # Obtener el ID de la carpeta origen para poder mover después
         folder_id = _resolver_carpeta_id(service, ruta_por_hacer)
+
+        return service, archivos, folder_id, destino_local
+
+    except Exception as e:
+        print(f"❌ Error al obtener archivos desde Drive: {e}")
+        return None, [], None, None
+
+
+def descargar_un_archivo_de_drive(
+    service, archivo: dict, destino_local: str, config: dict
+) -> Optional[str]:
+    """
+    Descarga UN archivo de Drive a la carpeta local.
+    Limpia las carpetas de trabajo antes de descargar.
+
+    Args:
+        service: Servicio de Google Drive autenticado
+        archivo: Dict con {id, name} del archivo
+        destino_local: Ruta de la carpeta local destino
+        config: Configuración para limpiar carpetas
+
+    Returns:
+        Ruta del archivo descargado o None si falla
+    """
+    try:
+        file_id = archivo["id"]
+        file_name = archivo["name"]
+
+        print(f"\n📥 Descargando: {file_name}")
+
+        # Limpiar todas las carpetas de trabajo antes de descargar
+        limpiar_carpetas_trabajo(config)
 
         # Descargar a carpeta local
         ruta_descargada = descargar_archivo_de_drive(
@@ -337,14 +362,44 @@ def obtener_archivo_desde_drive(config: dict) -> tuple:
         )
 
         if not ruta_descargada:
-            print("❌ Error al descargar el archivo")
-            return None, None, None, None
+            print(f"❌ Error al descargar el archivo: {file_name}")
+            return None
 
-        return service, file_id, folder_id, ruta_descargada
+        return ruta_descargada
 
     except Exception as e:
-        print(f"❌ Error al obtener archivo desde Drive: {e}")
+        print(f"❌ Error al descargar archivo: {e}")
+        return None
+
+
+def obtener_archivo_desde_drive(config: dict) -> tuple:
+    """
+    Función de compatibilidad que obtiene UN archivo desde Google Drive.
+    Mantiene la firma anterior para compatibilidad.
+
+    Args:
+        config: Diccionario de configuración con las rutas de Drive
+
+    Returns:
+        tuple: (service, file_id, folder_id, ruta_local) o (None, None, None, None) si no hay archivos
+    """
+    service, archivos, folder_id, destino_local = obtener_archivos_desde_drive(config)
+
+    if not archivos:
         return None, None, None, None
+
+    # Limpiar carpetas y descargar el primer archivo
+    limpiar_carpetas_trabajo(config)
+
+    archivo = archivos[0]
+    ruta_descargada = descargar_archivo_de_drive(
+        service, archivo["id"], archivo["name"], destino_local
+    )
+
+    if not ruta_descargada:
+        return None, None, None, None
+
+    return service, archivo["id"], folder_id, ruta_descargada
 
 
 def finalizar_archivo_en_drive(
@@ -354,21 +409,23 @@ def finalizar_archivo_en_drive(
     config: dict,
     fecha: str = None,
     hora: str = None,
+    ruta_archivo_actualizado: Optional[str] = None,
 ) -> bool:
     """
-    Mueve el archivo procesado a la carpeta de procesados en Drive.
+    Mueve el archivo original a Procesados y sube el archivo actualizado.
     Organiza en subcarpetas por fecha y hora.
 
     Args:
         service: Servicio de Google Drive autenticado
-        file_id: ID del archivo procesado
-        folder_id: ID de la carpeta origen
+        file_id: ID del archivo original procesado
+        folder_id: ID de la carpeta origen (Por Hacer)
         config: Diccionario de configuración
         fecha: Fecha de ejecución (formato: YYYY-MM-DD)
         hora: Hora de ejecución (formato: HH.MM.SS)
+        ruta_archivo_actualizado: Ruta local del archivo Excel actualizado para subir
 
     Returns:
-        True si se movió correctamente
+        True si se completó correctamente
     """
     try:
         drive_source = config.get("google_drive_source", {})
@@ -376,12 +433,43 @@ def finalizar_archivo_en_drive(
             "carpeta_procesados", "SantaElena/IConstruye/Procesados"
         )
 
-        print(f"\n☁️ Moviendo archivo procesado en Drive...")
+        print(f"\n☁️ Moviendo archivo original en Drive a Procesados...")
         print(f"   📂 Destino: {carpeta_procesados}/{fecha}/{hora}/")
 
-        return mover_archivo_procesado_drive(
+        # Mover archivo original
+        resultado = mover_archivo_procesado_drive(
             service, file_id, folder_id, carpeta_procesados, fecha, hora
         )
+
+        # Subir archivo actualizado a la misma carpeta
+        if ruta_archivo_actualizado and Path(ruta_archivo_actualizado).exists():
+            print(f"\n📤 Subiendo archivo actualizado a Procesados...")
+
+            # Obtener fecha y hora
+            if not fecha:
+                fecha = datetime.now().strftime("%Y-%m-%d")
+            if not hora:
+                hora = datetime.now().strftime("%H.%M.%S")
+
+            # Resolver o crear la carpeta destino: Procesados/fecha/hora
+            destino_id = _resolver_o_crear_carpeta(service, carpeta_procesados)
+            carpeta_fecha = drive.ensure_drive_folder(
+                service, fecha, destino_id, create=True
+            )
+            carpeta_hora = drive.ensure_drive_folder(
+                service, hora, carpeta_fecha["id"], create=True
+            )
+
+            # Subir archivo actualizado
+            archivo_subido = drive.upload_file_to_drive(
+                service, Path(ruta_archivo_actualizado), carpeta_hora["id"]
+            )
+
+            print(
+                f"   ✅ Archivo actualizado subido: {Path(ruta_archivo_actualizado).name}"
+            )
+
+        return resultado
 
     except Exception as e:
         print(f"❌ Error al finalizar archivo en Drive: {e}")
