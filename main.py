@@ -256,14 +256,16 @@ def mover_archivos_procesados(
 
 
 # Subir archivos a Google Drive
-def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
+def copiar_drive(registros, ruta_archivo_procesado, ruta_drive, fecha=None, hora=None):
     """
-    Sube archivos de registros a Google Drive organizados por fecha.
+    Sube archivos de registros a Google Drive organizados por fecha y hora.
 
     Args:
         registros: Lista de objetos Registro con archivos descargados
         ruta_archivo_procesado: Ruta del archivo Excel procesado
         ruta_drive: Ruta base en Drive (ej: "SantaElena/IConstruye/Facturas")
+        fecha: Fecha de ejecución (formato: YYYY-MM-DD). Si es None, usa fecha actual.
+        hora: Hora de ejecución (formato: HH.MM.SS). Si es None, usa hora actual.
 
     Returns:
         dict: Resumen con resultados de subida por registro
@@ -272,7 +274,11 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
 
     print("\n📤 Iniciando subida de archivos a Google Drive...")
 
-    fecha_hoy = datetime.datetime.now().strftime("%Y-%m-%d")
+    # Usar fecha/hora proporcionadas o actuales
+    if not fecha:
+        fecha = datetime.datetime.now().strftime("%Y-%m-%d")
+    if not hora:
+        hora = datetime.datetime.now().strftime("%H.%M.%S")
     archivos_a_subir = []
     mapa_registros = {}  # Mapeo: nombre_archivo -> registro
 
@@ -341,7 +347,7 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
         # Aún así retornamos todos los registros (sin PDF) para que se incluyan en informes
         return {
             "timestamp": datetime.datetime.now().isoformat(),
-            "carpeta_destino": f"{ruta_drive}/{fecha_hoy}",
+            "carpeta_destino": f"{ruta_drive}/{fecha}/{hora}",
             "exitosos": 0,
             "fallidos": 0,
             "sin_pdf": len(registros_sin_pdf),
@@ -363,9 +369,15 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
             parent_id = folder["id"]
 
         carpeta_fecha = drive.ensure_drive_folder(
-            service, fecha_hoy, parent_id, create=True
+            service, fecha, parent_id, create=True
         )
         carpeta_fecha_id = carpeta_fecha["id"]
+
+        # Crear subcarpeta con hora dentro de la fecha
+        carpeta_hora = drive.ensure_drive_folder(
+            service, hora, carpeta_fecha_id, create=True
+        )
+        carpeta_hora_id = carpeta_hora["id"]
 
         # Subir cada archivo en su carpeta de empresa
         resultados_por_registro = []
@@ -385,7 +397,7 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
             try:
                 # Crear carpeta empresa y subir archivo
                 carpeta_empresa = drive.ensure_drive_folder(
-                    service, nombre_empresa, carpeta_fecha_id, create=True
+                    service, nombre_empresa, carpeta_hora_id, create=True
                 )
 
                 archivo_subido = drive.upload_file_to_drive(
@@ -404,7 +416,7 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
                 reg.estado_subida = True
                 reg.drive_url = metadata.get("share_url")
                 reg.ruta_drive = (
-                    f"{ruta_drive}/{fecha_hoy}/{nombre_empresa}/{archivo_path.name}"
+                    f"{ruta_drive}/{fecha}/{hora}/{nombre_empresa}/{archivo_path.name}"
                 )
                 reg.error = None
 
@@ -431,12 +443,12 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
         print(f"\n{'=' * 60}")
         print(f"📤 {exitosos}/{len(mapa_registros)} archivos subidos a Drive")
         print(f"⚠️  {len(registros_sin_pdf)} registros sin PDF (incluidos en informe)")
-        print(f"📁 {ruta_drive}/{fecha_hoy}/[empresa]/archivo")
+        print(f"📁 {ruta_drive}/{fecha}/{hora}/[empresa]/archivo")
         print(f"{'=' * 60}\n")
 
         return {
             "timestamp": datetime.datetime.now().isoformat(),
-            "carpeta_destino": f"{ruta_drive}/{fecha_hoy}",
+            "carpeta_destino": f"{ruta_drive}/{fecha}/{hora}",
             "exitosos": exitosos,
             "fallidos": len(mapa_registros) - exitosos,
             "sin_pdf": len(registros_sin_pdf),
@@ -530,7 +542,9 @@ def main():
 
     # 4. Subir archivos a Google Drive
     print("\n☁️ Paso 4: Subiendo archivos a Google Drive...")
-    registros_con_drive = copiar_drive(registros, ruta_archivo_original, ruta_drive)
+    registros_con_drive = copiar_drive(
+        registros, ruta_archivo_original, ruta_drive, fecha_ejecucion, hora_ejecucion
+    )
 
     # Validar que hay resultados para procesar
     resultados = registros_con_drive.get("resultados", [])
