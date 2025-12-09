@@ -10,6 +10,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import src.google_drive as drive
 from src.services.downloader import descargar_pdf
+from src.services.drive_source import (
+    finalizar_archivo_en_drive,
+    obtener_archivo_desde_drive,
+)
 from src.services.excel_updater import copiar_y_actualizar_excel
 from src.services.pdf_extractor import extraer_datos_registros
 from src.services.reader import extraer_url_desde_xlsx, leer_archivo_xlsx
@@ -457,13 +461,15 @@ def main():
     Función principal del sistema de procesamiento de facturas.
 
     Flujo:
-    1. Leer Excel original de "Por Hacer"
+    0. Buscar y descargar archivo desde Google Drive (Por Hacer remoto)
+    1. Leer Excel original de "Por Hacer" local
     2. Scraping en IConstruye
     3. Descargar PDFs y extraer montos
     4. Subir a Google Drive
     5. Copiar y actualizar Excel con columnas Q-U
     6. Enviar correo a destinatario único
     7. Mover archivos a carpeta procesados (fecha/hora)
+    8. Mover archivo procesado en Drive a carpeta "Procesados"
     """
     print("\n" + "=" * 60)
     print("🚀 INICIANDO PROCESO DE FACTURAS")
@@ -492,7 +498,17 @@ def main():
     if not directorio_informes:
         directorio_informes = os.path.join(os.path.dirname(__file__), "informes")
 
-    # 1. Leer registros del archivo Excel original
+    # 0. Buscar y descargar archivo desde Google Drive
+    print("\n☁️ Paso 0: Buscando archivos en Google Drive...")
+    drive_service, file_id_drive, folder_id_drive, ruta_descargada = (
+        obtener_archivo_desde_drive(config)
+    )
+
+    if not file_id_drive:
+        print("📭 No hay archivos para procesar en Google Drive. Finalizando.")
+        return
+
+    # 1. Leer registros del archivo Excel original (ahora descargado de Drive)
     print("\n📖 Paso 1: Leyendo archivo Excel original...")
     resultado_excel = obtener_excel()
     if resultado_excel is None:
@@ -549,9 +565,26 @@ def main():
         hora_ejecucion,
     )
 
+    # 8. Mover archivo procesado en Drive a carpeta "Procesados"
+    print("\n☁️ Paso 8: Moviendo archivo en Drive a Procesados...")
+    if drive_service and file_id_drive and folder_id_drive:
+        finalizar_archivo_en_drive(
+            drive_service,
+            file_id_drive,
+            folder_id_drive,
+            config,
+            fecha=fecha_ejecucion,
+            hora=hora_ejecucion,
+        )
+    else:
+        print("⚠️ No se pudo mover el archivo en Drive (faltan datos de conexión)")
+
     print("\n" + "=" * 60)
     print("✅ PROCESO COMPLETADO EXITOSAMENTE")
-    print(f"📁 Archivos en: {carpeta_listos}/{fecha_ejecucion}/{hora_ejecucion}/")
+    print(
+        f"📁 Archivos locales en: {carpeta_listos}/{fecha_ejecucion}/{hora_ejecucion}/"
+    )
+    print(f"☁️ Archivo en Drive movido a: Procesados/{fecha_ejecucion}/")
     print("=" * 60 + "\n")
 
 

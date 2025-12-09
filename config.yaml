@@ -1,5 +1,11 @@
 ruta_archivos: "/Volumes/Resources/Develop/SmartBots/Santa_Elena/Contabilidad/Por Hacer"
 
+# Configuración para obtener archivos desde Google Drive
+google_drive_source:
+  carpeta_por_hacer: "SantaElena/IConstruye/Por Hacer"
+  carpeta_procesados: "SantaElena/IConstruye/Procesados"
+  destino_local: "/Volumes/Resources/Develop/SmartBots/Santa_Elena/Contabilidad/Por Hacer"
+
 web_scraping:
   login_url: "https://cl.iconstruye.com/loginsso.aspx?hsCtaTracking=c5739d9b-1567-4a49-90d4-9e8e1701f105%7Cc9ffe135-4402-4101-a071-33ca6e5227d4"
   usuario: "ltarrillo@santaelena.com"
