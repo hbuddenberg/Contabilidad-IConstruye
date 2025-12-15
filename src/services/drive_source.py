@@ -4,14 +4,12 @@ Módulo para obtener archivos desde Google Drive.
 Este módulo proporciona funcionalidades para:
 - Listar archivos en una carpeta de Google Drive
 - Descargar archivos de Drive a una carpeta local
-- Mover archivos procesados a otra carpeta en Drive
+- Eliminar archivos de Drive (después de procesarlos)
 - Limpiar carpetas locales antes de procesar
 
 Autor: Sistema de Contabilidad IConstruye
 """
 
-import os
-import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -212,72 +210,6 @@ def descargar_archivo_de_drive(
         return None
 
 
-def mover_archivo_procesado_drive(
-    service,
-    file_id: str,
-    carpeta_origen_id: str,
-    carpeta_destino: str,
-    fecha: str = None,
-    hora: str = None,
-) -> bool:
-    """
-    Mueve un archivo en Drive de una carpeta a otra (de "Por Hacer" a "Procesados").
-    Organiza por fecha y hora: Procesados/YYYY-MM-DD/HH.MM.SS/archivo.xlsx
-
-    Args:
-        service: Servicio de Google Drive autenticado
-        file_id: ID del archivo a mover
-        carpeta_origen_id: ID de la carpeta origen (Por Hacer)
-        carpeta_destino: Ruta destino en Drive (ej: "SantaElena/IConstruye/Procesados")
-        fecha: Fecha de ejecución (formato: YYYY-MM-DD). Si es None, usa fecha actual.
-        hora: Hora de ejecución (formato: HH.MM.SS). Si es None, usa hora actual.
-
-    Returns:
-        True si se movió correctamente, False en caso contrario
-    """
-    try:
-        # Obtener fecha y hora para organizar
-        if not fecha:
-            fecha = datetime.now().strftime("%Y-%m-%d")
-        if not hora:
-            hora = datetime.now().strftime("%H.%M.%S")
-
-        # Resolver o crear la carpeta destino base
-        destino_id = _resolver_o_crear_carpeta(service, carpeta_destino)
-
-        if not destino_id:
-            print(f"❌ No se pudo resolver/crear la carpeta: {carpeta_destino}")
-            return False
-
-        # Crear subcarpeta con fecha
-        carpeta_fecha = drive.ensure_drive_folder(
-            service, fecha, destino_id, create=True
-        )
-        carpeta_fecha_id = carpeta_fecha["id"]
-
-        # Crear subcarpeta con hora dentro de la fecha
-        carpeta_hora = drive.ensure_drive_folder(
-            service, hora, carpeta_fecha_id, create=True
-        )
-        carpeta_hora_id = carpeta_hora["id"]
-
-        # Mover el archivo: quitar del padre anterior, agregar al nuevo
-        service.files().update(
-            fileId=file_id,
-            addParents=carpeta_hora_id,
-            removeParents=carpeta_origen_id,
-            supportsAllDrives=True,
-            fields="id, parents",
-        ).execute()
-
-        print(f"✅ Archivo movido a: {carpeta_destino}/{fecha}/{hora}/")
-        return True
-
-    except Exception as e:
-        print(f"❌ Error al mover archivo en Drive: {e}")
-        return False
-
-
 def obtener_archivos_desde_drive(config: dict) -> tuple:
     """
     Función que busca y lista TODOS los archivos desde Google Drive.
@@ -402,77 +334,26 @@ def obtener_archivo_desde_drive(config: dict) -> tuple:
     return service, archivo["id"], folder_id, ruta_descargada
 
 
-def finalizar_archivo_en_drive(
-    service,
-    file_id: str,
-    folder_id: str,
-    config: dict,
-    fecha: str = None,
-    hora: str = None,
-    ruta_archivo_actualizado: Optional[str] = None,
-) -> bool:
+def eliminar_archivo_en_drive(service, file_id: str) -> bool:
     """
-    Mueve el archivo original a Procesados y sube el archivo actualizado.
-    Organiza en subcarpetas por fecha y hora.
+    Elimina un archivo de Google Drive.
+
+    Se usa para eliminar el archivo original de "Por Hacer" después de
+    que ha sido subido a la carpeta de Facturas.
 
     Args:
         service: Servicio de Google Drive autenticado
-        file_id: ID del archivo original procesado
-        folder_id: ID de la carpeta origen (Por Hacer)
-        config: Diccionario de configuración
-        fecha: Fecha de ejecución (formato: YYYY-MM-DD)
-        hora: Hora de ejecución (formato: HH.MM.SS)
-        ruta_archivo_actualizado: Ruta local del archivo Excel actualizado para subir
+        file_id: ID del archivo a eliminar
 
     Returns:
-        True si se completó correctamente
+        True si se eliminó correctamente, False en caso de error
     """
     try:
-        drive_source = config.get("google_drive_source", {})
-        carpeta_procesados = drive_source.get(
-            "carpeta_procesados", "SantaElena/IConstruye/Procesados"
-        )
-
-        print(f"\n☁️ Moviendo archivo original en Drive a Procesados...")
-        print(f"   📂 Destino: {carpeta_procesados}/{fecha}/{hora}/")
-
-        # Mover archivo original
-        resultado = mover_archivo_procesado_drive(
-            service, file_id, folder_id, carpeta_procesados, fecha, hora
-        )
-
-        # Subir archivo actualizado a la misma carpeta
-        if ruta_archivo_actualizado and Path(ruta_archivo_actualizado).exists():
-            print(f"\n📤 Subiendo archivo actualizado a Procesados...")
-
-            # Obtener fecha y hora
-            if not fecha:
-                fecha = datetime.now().strftime("%Y-%m-%d")
-            if not hora:
-                hora = datetime.now().strftime("%H.%M.%S")
-
-            # Resolver o crear la carpeta destino: Procesados/fecha/hora
-            destino_id = _resolver_o_crear_carpeta(service, carpeta_procesados)
-            carpeta_fecha = drive.ensure_drive_folder(
-                service, fecha, destino_id, create=True
-            )
-            carpeta_hora = drive.ensure_drive_folder(
-                service, hora, carpeta_fecha["id"], create=True
-            )
-
-            # Subir archivo actualizado
-            archivo_subido = drive.upload_file_to_drive(
-                service, Path(ruta_archivo_actualizado), carpeta_hora["id"]
-            )
-
-            print(
-                f"   ✅ Archivo actualizado subido: {Path(ruta_archivo_actualizado).name}"
-            )
-
-        return resultado
-
+        service.files().delete(fileId=file_id).execute()
+        print(f"   ✅ Archivo eliminado de 'Por Hacer' en Drive")
+        return True
     except Exception as e:
-        print(f"❌ Error al finalizar archivo en Drive: {e}")
+        print(f"   ❌ Error al eliminar archivo de Drive: {e}")
         return False
 
 
@@ -530,36 +411,4 @@ def _resolver_carpeta_id(service, ruta_drive: str) -> Optional[str]:
 
     except Exception as e:
         print(f"❌ Error al resolver carpeta: {e}")
-        return None
-
-
-def _resolver_o_crear_carpeta(service, ruta_drive: str) -> Optional[str]:
-    """
-    Resuelve una ruta de carpeta en Drive, creándola si no existe.
-
-    Args:
-        service: Servicio de Google Drive
-        ruta_drive: Ruta de la carpeta (ej: "SantaElena/IConstruye/Procesados")
-
-    Returns:
-        ID de la carpeta
-    """
-    try:
-        partes = [p for p in ruta_drive.strip("/").split("/") if p]
-
-        if not partes:
-            return "root"
-
-        parent_id = "root"
-
-        for carpeta_nombre in partes:
-            carpeta = drive.ensure_drive_folder(
-                service, carpeta_nombre, parent_id, create=True
-            )
-            parent_id = carpeta["id"]
-
-        return parent_id
-
-    except Exception as e:
-        print(f"❌ Error al resolver/crear carpeta: {e}")
         return None

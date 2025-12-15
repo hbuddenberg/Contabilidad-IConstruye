@@ -1,6 +1,5 @@
 import datetime
 import os
-import shutil
 import sys
 
 import yaml
@@ -12,7 +11,7 @@ import src.google_drive as drive
 from src.services.downloader import descargar_pdf
 from src.services.drive_source import (
     descargar_un_archivo_de_drive,
-    finalizar_archivo_en_drive,
+    eliminar_archivo_en_drive,
     obtener_archivos_desde_drive,
 )
 from src.services.excel_updater import copiar_y_actualizar_excel
@@ -26,6 +25,19 @@ from src.services.scraper import (
 )
 from src.utils.email_mapping import cargar_plantilla
 from src.utils.email_sender import enviar_correo_api
+
+
+def calcular_semana_año():
+    """
+    Calcula el año y número de semana ISO de la fecha actual.
+
+    Returns:
+        tuple: (año, número_semana) - Ejemplo: (2025, 50)
+    """
+    ahora = datetime.datetime.now()
+    año = ahora.year
+    semana = ahora.isocalendar()[1]  # ISO week number
+    return año, semana
 
 
 # Cargar configuración para obtener carpeta de descargas usando ruta absoluta
@@ -206,65 +218,18 @@ def enviar_informe_unico(ruta_archivo_actualizado, config, registros):
     return enviado
 
 
-# Mover archivos procesados a carpeta Listos con fecha/hora
-def mover_archivos_procesados(
-    ruta_archivo_original, ruta_archivo_actualizado, carpeta_listos, fecha, hora
+# Subir archivos a Google Drive
+def copiar_drive(
+    registros, ruta_archivo_original, ruta_archivo_actualizado, ruta_drive
 ):
     """
-    Mueve el archivo original y el actualizado a la carpeta de procesados (Listos).
-
-    La carpeta de destino tiene estructura:
-    Listos/{fecha}/{hora}/
-    Ejemplo: Listos/2025-12-08/20.00.00/
-
-    Args:
-        ruta_archivo_original: Ruta del archivo original (Por Hacer/SEMANA 40.xlsx)
-        ruta_archivo_actualizado: Ruta del archivo actualizado (informes/SEMANA 40_timestamp.xlsx)
-        carpeta_listos: Carpeta base de procesados (desde config.yaml)
-        fecha: Fecha de ejecución (formato: 2025-12-08)
-        hora: Hora de ejecución (formato: 20.00.00)
-    """
-    print("\n📁 Moviendo archivos a carpeta de procesados (Listos)...")
-
-    # Crear estructura: Listos/{fecha}/{hora}/
-    carpeta_fecha = os.path.join(carpeta_listos, fecha)
-    carpeta_destino = os.path.join(carpeta_fecha, hora)
-    os.makedirs(carpeta_destino, exist_ok=True)
-
-    print(f"   📂 Carpeta destino: {carpeta_destino}")
-
-    # Mover archivo original
-    if ruta_archivo_original and os.path.exists(ruta_archivo_original):
-        try:
-            nombre_original = os.path.basename(ruta_archivo_original)
-            destino_original = os.path.join(carpeta_destino, nombre_original)
-            shutil.move(ruta_archivo_original, destino_original)
-            print(f"   ✅ Archivo original movido: {nombre_original}")
-        except Exception as e:
-            print(f"   ⚠️ Error al mover archivo original: {e}")
-
-    # Mover archivo actualizado
-    if ruta_archivo_actualizado and os.path.exists(ruta_archivo_actualizado):
-        try:
-            nombre_actualizado = os.path.basename(ruta_archivo_actualizado)
-            destino_actualizado = os.path.join(carpeta_destino, nombre_actualizado)
-            shutil.move(ruta_archivo_actualizado, destino_actualizado)
-            print(f"   ✅ Archivo actualizado movido: {nombre_actualizado}")
-        except Exception as e:
-            print(f"   ⚠️ Error al mover archivo actualizado: {e}")
-
-    print(f"📁 Archivos procesados guardados en: {carpeta_destino}")
-
-
-# Subir archivos a Google Drive
-def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
-    """
-    Sube archivos de registros a Google Drive organizados por fecha y hora.
-    Genera su propio timestamp al momento de subir (hora real de subida).
+    Sube archivos de registros a Google Drive organizados por año y semana.
+    Estructura: /Facturas/2025/Semana 50/
 
     Args:
         registros: Lista de objetos Registro con archivos descargados
-        ruta_archivo_procesado: Ruta del archivo Excel procesado
+        ruta_archivo_original: Ruta del archivo Excel original (Por Hacer)
+        ruta_archivo_actualizado: Ruta del archivo Excel actualizado con columnas Q-U
         ruta_drive: Ruta base en Drive (ej: "SantaElena/IConstruye/Facturas")
 
     Returns:
@@ -274,11 +239,11 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
 
     print("\n📤 Iniciando subida de archivos a Google Drive...")
 
-    # Generar timestamp propio al momento de subir (hora real de subida)
-    ahora_subida = datetime.datetime.now()
-    fecha = ahora_subida.strftime("%Y-%m-%d")
-    hora = ahora_subida.strftime("%H.%M.%S")
-    print(f"   ⏰ Hora de subida de facturas: {fecha} {hora}")
+    # Calcular año y semana para la estructura de carpetas
+    año, semana = calcular_semana_año()
+    nombre_carpeta_semana = f"Semana {semana}"
+    print(f"   📅 Carpeta destino: {ruta_drive}/{año}/{nombre_carpeta_semana}/")
+
     archivos_a_subir = []
     mapa_registros = {}  # Mapeo: nombre_archivo -> registro
 
@@ -337,17 +302,24 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
                 f"   ⚠ Folio {registro.folio}: Sin archivos (estado_pdf={getattr(registro, 'estado_pdf', None)})"
             )
 
-    # Agregar Excel procesado
-    if ruta_archivo_procesado and Path(ruta_archivo_procesado).exists():
-        archivos_a_subir.append(Path(ruta_archivo_procesado))
-        print(f"   ✓ Excel procesado: {Path(ruta_archivo_procesado).name}")
+    # Agregar Excel original (archivo de Por Hacer)
+    if ruta_archivo_original and Path(ruta_archivo_original).exists():
+        archivos_a_subir.append(Path(ruta_archivo_original))
+        print(f"   ✓ Excel original: {Path(ruta_archivo_original).name}")
+
+    # Agregar Excel actualizado (con columnas Q-U)
+    if ruta_archivo_actualizado and Path(ruta_archivo_actualizado).exists():
+        archivos_a_subir.append(Path(ruta_archivo_actualizado))
+        print(f"   ✓ Excel actualizado: {Path(ruta_archivo_actualizado).name}")
+
+    carpeta_destino = f"{ruta_drive}/{año}/{nombre_carpeta_semana}"
 
     if not archivos_a_subir:
         print("⚠️  No hay archivos para subir a Drive")
         # Aún así retornamos todos los registros (sin PDF) para que se incluyan en informes
         return {
             "timestamp": datetime.datetime.now().isoformat(),
-            "carpeta_destino": f"{ruta_drive}/{fecha}/{hora}",
+            "carpeta_destino": carpeta_destino,
             "exitosos": 0,
             "fallidos": 0,
             "sin_pdf": len(registros_sin_pdf),
@@ -361,25 +333,26 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
         creds = drive.ensure_credentials()
         service = drive.build_drive_service(creds)
 
-        # Crear estructura base: ruta_drive/fecha
+        # Crear estructura base: ruta_drive/año/Semana N
         partes_ruta = ruta_drive.split("/")
         parent_id = "root"
         for carpeta in partes_ruta:
             folder = drive.ensure_drive_folder(service, carpeta, parent_id, create=True)
             parent_id = folder["id"]
 
-        carpeta_fecha = drive.ensure_drive_folder(
-            service, fecha, parent_id, create=True
+        # Crear carpeta del año
+        carpeta_año = drive.ensure_drive_folder(
+            service, str(año), parent_id, create=True
         )
-        carpeta_fecha_id = carpeta_fecha["id"]
+        carpeta_año_id = carpeta_año["id"]
 
-        # Crear subcarpeta con hora dentro de la fecha
-        carpeta_hora = drive.ensure_drive_folder(
-            service, hora, carpeta_fecha_id, create=True
+        # Crear carpeta de la semana dentro del año
+        carpeta_semana = drive.ensure_drive_folder(
+            service, nombre_carpeta_semana, carpeta_año_id, create=True
         )
-        carpeta_hora_id = carpeta_hora["id"]
+        carpeta_semana_id = carpeta_semana["id"]
 
-        # Subir cada archivo en su carpeta de empresa
+        # Subir PDFs de cada registro directamente a la carpeta de semana
         resultados_por_registro = []
         exitosos = 0
 
@@ -387,21 +360,10 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
             reg = info["registro"]
             archivo_path = info["path"]
 
-            # Sanitizar nombre de empresa
-            nombre_empresa = "".join(
-                c
-                for c in reg.razon_social.strip()
-                if c.isalnum() or c in (" ", "-", "_")
-            ).strip()
-
             try:
-                # Crear carpeta empresa y subir archivo
-                carpeta_empresa = drive.ensure_drive_folder(
-                    service, nombre_empresa, carpeta_hora_id, create=True
-                )
-
+                # Subir archivo directamente a la carpeta de semana (sin subcarpetas por empresa)
                 archivo_subido = drive.upload_file_to_drive(
-                    service, archivo_path, carpeta_empresa["id"]
+                    service, archivo_path, carpeta_semana_id
                 )
 
                 metadata = drive.generate_share_link(
@@ -415,9 +377,7 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
                 reg.tipo_archivo = info["tipo"]
                 reg.estado_subida = True
                 reg.drive_url = metadata.get("share_url")
-                reg.ruta_drive = (
-                    f"{ruta_drive}/{fecha}/{hora}/{nombre_empresa}/{archivo_path.name}"
-                )
+                reg.ruta_drive = f"{carpeta_destino}/{archivo_path.name}"
                 reg.error = None
 
                 resultados_por_registro.append(reg)
@@ -437,21 +397,39 @@ def copiar_drive(registros, ruta_archivo_procesado, ruta_drive):
                 resultados_por_registro.append(reg)
                 print(f"   ✗ {reg.razon_social[:40]}: {str(e)[:40]}")
 
+        # Subir archivos Excel (original y actualizado) directamente a la carpeta de semana
+        archivos_excel_subidos = 0
+        for archivo_path in archivos_a_subir:
+            # Solo procesar archivos Excel (los PDFs ya se procesaron arriba)
+            if archivo_path.suffix.lower() in [".xlsx", ".xls"]:
+                try:
+                    archivo_subido = drive.upload_file_to_drive(
+                        service, archivo_path, carpeta_semana_id
+                    )
+                    print(f"   ✓ Excel subido: {archivo_path.name}")
+                    archivos_excel_subidos += 1
+                except Exception as e:
+                    print(
+                        f"   ✗ Error subiendo Excel {archivo_path.name}: {str(e)[:40]}"
+                    )
+
         # Combinar resultados: registros subidos + registros sin PDF
         todos_los_resultados = resultados_por_registro + registros_sin_pdf
 
         print(f"\n{'=' * 60}")
-        print(f"📤 {exitosos}/{len(mapa_registros)} archivos subidos a Drive")
+        print(f"📤 {exitosos}/{len(mapa_registros)} PDFs subidos a Drive")
+        print(f"📊 {archivos_excel_subidos} archivos Excel subidos")
         print(f"⚠️  {len(registros_sin_pdf)} registros sin PDF (incluidos en informe)")
-        print(f"📁 {ruta_drive}/{fecha}/{hora}/[empresa]/archivo")
+        print(f"📁 {carpeta_destino}/")
         print(f"{'=' * 60}\n")
 
         return {
             "timestamp": datetime.datetime.now().isoformat(),
-            "carpeta_destino": f"{ruta_drive}/{fecha}/{hora}",
+            "carpeta_destino": carpeta_destino,
             "exitosos": exitosos,
             "fallidos": len(mapa_registros) - exitosos,
             "sin_pdf": len(registros_sin_pdf),
+            "excel_subidos": archivos_excel_subidos,
             "resultados": todos_los_resultados,  # Incluye TODOS los registros
         }
 
@@ -475,12 +453,21 @@ def procesar_un_archivo(
     config: dict,
     ruta_drive: str,
     directorio_informes: str,
-    carpeta_listos: str,
     archivo_numero: int,
     total_archivos: int,
 ):
     """
     Procesa un único archivo Excel desde Google Drive.
+
+    Flujo:
+    1. Descargar archivo de Drive
+    2. Leer registros del Excel
+    3. Scraping en IConstruye
+    4. Procesar folios (descargar PDFs, extraer montos)
+    5. Actualizar Excel con columnas Q-U
+    6. Subir TODO a Drive (PDFs + Excel original + Excel actualizado) en /Facturas/año/Semana N/
+    7. Enviar correo con informe
+    8. Eliminar archivo original de "Por Hacer" en Drive (ya está en Facturas)
 
     Args:
         archivo: Dict con {id, name} del archivo
@@ -490,7 +477,6 @@ def procesar_un_archivo(
         config: Configuración del sistema
         ruta_drive: Ruta base en Drive para Facturas
         directorio_informes: Directorio para informes
-        carpeta_listos: Carpeta local de archivos procesados
         archivo_numero: Número del archivo actual (para mostrar progreso)
         total_archivos: Total de archivos a procesar
 
@@ -498,15 +484,18 @@ def procesar_un_archivo(
         bool: True si se procesó correctamente, False si hubo error
     """
     # Generar fecha y hora de INICIO para este archivo
-    # Esta hora se usa para Listos y Procesados (Excel original y actualizado)
     ahora_inicio = datetime.datetime.now()
     fecha_ejecucion = ahora_inicio.strftime("%Y-%m-%d")
-    hora_ejecucion = ahora_inicio.strftime("%H.%M.%S")  # Hora de inicio
+    hora_ejecucion = ahora_inicio.strftime("%H.%M.%S")
     timestamp = f"{fecha_ejecucion}_{hora_ejecucion}"
+
+    # Calcular año y semana para mostrar en logs
+    año, semana = calcular_semana_año()
 
     print("\n" + "=" * 60)
     print(f"📄 PROCESANDO ARCHIVO {archivo_numero}/{total_archivos}: {archivo['name']}")
     print(f"⏰ Fecha: {fecha_ejecucion} | Hora inicio: {hora_ejecucion}")
+    print(f"📅 Destino Drive: {ruta_drive}/{año}/Semana {semana}/")
     print("=" * 60)
 
     # 0.1 Descargar el archivo (limpia carpetas locales)
@@ -526,6 +515,12 @@ def procesar_un_archivo(
         print("❌ No se pudieron cargar registros. Saltando archivo...")
         return False
     registros, ruta_archivo_original = resultado_excel
+
+    # Validar que tenemos la ruta del archivo original
+    if not ruta_archivo_original or not isinstance(ruta_archivo_original, str):
+        print("❌ No se pudo obtener la ruta del archivo original. Saltando archivo...")
+        return False
+
     print(f"   ✅ {len(registros)} registros cargados desde: {ruta_archivo_original}")
 
     # 2. Scraping en IConstruye
@@ -539,69 +534,53 @@ def procesar_un_archivo(
     print("\n🔄 Paso 3: Procesando folios...")
     registros = procesamiento_excel(driver, registros)
 
-    # 4. Subir archivos a Google Drive (Facturas)
-    # Nota: copiar_drive genera su propia hora de subida (hora real)
-    print("\n☁️ Paso 4: Subiendo archivos a Google Drive...")
-    registros_con_drive = copiar_drive(registros, ruta_archivo_original, ruta_drive)
-
-    # Validar que hay resultados para procesar
-    resultados = registros_con_drive.get("resultados", [])
-    if not resultados:
-        print("⚠️ No hay registros para procesar después de copiar a Drive.")
-        mover_archivos_procesados(
-            ruta_archivo_original, None, carpeta_listos, fecha_ejecucion, hora_ejecucion
-        )
-        # Aún así movemos el archivo en Drive a Procesados
-        finalizar_archivo_en_drive(
-            drive_service,
-            archivo["id"],
-            folder_id_drive,
-            config,
-            fecha=fecha_ejecucion,
-            hora=hora_ejecucion,
-            ruta_archivo_actualizado=None,
-        )
-        return True
-
-    # 5. Copiar y actualizar Excel con nuevas columnas (Q-U)
-    print("\n📊 Paso 5: Actualizando Excel con datos extraídos...")
+    # 4. Copiar y actualizar Excel con nuevas columnas (Q-U)
+    print("\n📊 Paso 4: Actualizando Excel con datos extraídos...")
     ruta_archivo_actualizado = copiar_y_actualizar_excel(
         ruta_archivo_original=ruta_archivo_original,
-        registros=resultados,
+        registros=registros,
         directorio_salida=directorio_informes,
         timestamp=timestamp,
     )
 
+    # 5. Subir TODO a Google Drive (PDFs + Excel original + Excel actualizado)
+    # Estructura: /Facturas/año/Semana N/
+    print("\n☁️ Paso 5: Subiendo archivos a Google Drive...")
+    registros_con_drive = copiar_drive(
+        registros, ruta_archivo_original, ruta_archivo_actualizado, ruta_drive
+    )
+
+    # Validar que hay resultados para procesar
+    resultados = registros_con_drive.get("resultados", [])
+    carpeta_destino = registros_con_drive.get(
+        "carpeta_destino", f"{ruta_drive}/{año}/Semana {semana}"
+    )
+
     # 6. Enviar correo a destinatario único
     print("\n📧 Paso 6: Enviando correo con informe...")
-    enviar_informe_unico(ruta_archivo_actualizado, config, resultados)
+    if ruta_archivo_actualizado:
+        enviar_informe_unico(
+            ruta_archivo_actualizado, config, resultados if resultados else registros
+        )
 
-    # 7. Mover archivo original en Drive a "Procesados" y subir actualizado
-    # (ANTES de mover localmente, para que el archivo aún exista)
-    print("\n☁️ Paso 7: Moviendo archivo en Drive a Procesados...")
-    finalizar_archivo_en_drive(
-        drive_service,
-        archivo["id"],
-        folder_id_drive,
-        config,
-        fecha=fecha_ejecucion,
-        hora=hora_ejecucion,
-        ruta_archivo_actualizado=ruta_archivo_actualizado,
-    )
+    # 7. Eliminar archivo original de "Por Hacer" en Drive (ya está en Facturas)
+    print("\n🗑️ Paso 7: Eliminando archivo original de 'Por Hacer' en Drive...")
+    eliminar_archivo_en_drive(drive_service, archivo["id"])
 
-    # 8. Mover archivos a carpeta de procesados local (Listos/fecha/hora)
-    print("\n📁 Paso 8: Moviendo archivos a Listos...")
-    mover_archivos_procesados(
-        ruta_archivo_original,
-        ruta_archivo_actualizado,
-        carpeta_listos,
-        fecha_ejecucion,
-        hora_ejecucion,
-    )
+    # 8. Limpiar archivos locales temporales
+    print("\n🧹 Paso 8: Limpiando archivos locales temporales...")
+    try:
+        if ruta_archivo_original and os.path.exists(ruta_archivo_original):
+            os.remove(ruta_archivo_original)
+            print(f"   ✅ Eliminado: {os.path.basename(ruta_archivo_original)}")
+        if ruta_archivo_actualizado and os.path.exists(ruta_archivo_actualizado):
+            os.remove(ruta_archivo_actualizado)
+            print(f"   ✅ Eliminado: {os.path.basename(ruta_archivo_actualizado)}")
+    except Exception as e:
+        print(f"   ⚠️ Error limpiando archivos temporales: {e}")
 
     print(f"\n✅ Archivo {archivo['name']} procesado exitosamente")
-    print(f"   📁 Local: {carpeta_listos}/{fecha_ejecucion}/{hora_ejecucion}/")
-    print(f"   ☁️ Drive: Procesados/{fecha_ejecucion}/{hora_ejecucion}/")
+    print(f"   ☁️ Drive Facturas: {carpeta_destino}/")
 
     return True
 
@@ -618,11 +597,11 @@ def main():
     1. Leer Excel original de "Por Hacer" local
     2. Scraping en IConstruye
     3. Descargar PDFs y extraer montos
-    4. Subir facturas a Google Drive
-    5. Copiar y actualizar Excel con columnas Q-U
+    4. Actualizar Excel con columnas Q-U
+    5. Subir TODO a Drive (PDFs + Excel original + Excel actualizado) en /Facturas/año/Semana N/
     6. Enviar correo a destinatario único
-    7. Mover archivo original y subir actualizado a Drive "Procesados"
-    8. Mover archivos a carpeta procesados local (fecha/hora)
+    7. Eliminar archivo original de "Por Hacer" en Drive (ya está en Facturas)
+    8. Limpiar archivos locales temporales
     """
     print("\n" + "=" * 60)
     print("🚀 INICIANDO PROCESO DE FACTURAS")
@@ -632,13 +611,6 @@ def main():
     config = configuracion()
     ruta_drive = config["google_drive"]["carpeta_destino"]
     directorio_informes = config.get("informes", {}).get("directorio_local")
-    carpeta_listos = config.get("procesados", {}).get("carpeta_listos")
-
-    if not carpeta_listos:
-        carpeta_listos = (
-            "/Volumes/Resources/Develop/SmartBots/Santa_Elena/Contabilidad/Listos"
-        )
-        print(f"⚠️ carpeta_listos no configurada, usando: {carpeta_listos}")
 
     if not directorio_informes:
         directorio_informes = os.path.join(os.path.dirname(__file__), "informes")
@@ -672,7 +644,6 @@ def main():
                 config=config,
                 ruta_drive=ruta_drive,
                 directorio_informes=directorio_informes,
-                carpeta_listos=carpeta_listos,
                 archivo_numero=i,
                 total_archivos=total_archivos,
             )
