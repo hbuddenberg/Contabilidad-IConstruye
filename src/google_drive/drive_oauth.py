@@ -436,6 +436,45 @@ def upload_file_to_drive(
     return created_file
 
 
+def move_file_in_drive(
+    service,
+    file_id: str,
+    new_parent_id: str,
+) -> Dict[str, Any]:
+    """
+    Mueve un archivo a otra carpeta en Drive.
+
+    Args:
+        service: Cliente autenticado de Google Drive.
+        file_id: ID del archivo a mover.
+        new_parent_id: ID de la carpeta destino.
+
+    Returns:
+        Dict con metadatos del archivo movido.
+    """
+    # Obtener los padres actuales del archivo
+    file_metadata = (
+        service.files()
+        .get(fileId=file_id, fields="parents", supportsAllDrives=True)
+        .execute()
+    )
+    previous_parents = ",".join(file_metadata.get("parents", []))
+
+    # Mover el archivo: agregar nuevo padre y remover el anterior
+    moved_file = (
+        service.files()
+        .update(
+            fileId=file_id,
+            addParents=new_parent_id,
+            removeParents=previous_parents,
+            fields="id, name, mimeType, parents, webViewLink",
+            supportsAllDrives=True,
+        )
+        .execute()
+    )
+    return moved_file
+
+
 def generate_share_link(
     service,
     file_id: str,

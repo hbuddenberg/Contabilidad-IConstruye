@@ -1,16 +1,22 @@
-import os
-import requests
 import datetime
-import yaml
+import os
 import time
 
+import requests
+import yaml
+
 # Cargar configuración desde config.yaml usando ruta absoluta
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 CONFIG_PATH = os.path.join(PROJECT_ROOT, "config.yaml")
 with open(CONFIG_PATH, "r", encoding="utf-8") as file:
     config = yaml.safe_load(file)
 
-CARPETA_DESCARGAS = config["web_scraping"]["carpeta_descargas"]  # Ruta base de descargas
+CARPETA_DESCARGAS = config["web_scraping"][
+    "carpeta_descargas"
+]  # Ruta base de descargas
+
 
 def descargar_pdf(registros):
     """
@@ -30,10 +36,13 @@ def descargar_pdf(registros):
             continue
 
         try:
-            response = requests.get(registro.url_archivo, timeout=10)  # Hacer la solicitud con un timeout de 10s
+            response = requests.get(
+                registro.url_archivo, timeout=10
+            )  # Hacer la solicitud con un timeout de 10s
             if response.status_code == 200:
-                # Guardar el archivo con el nombre basado en el RUT y Folio
-                nombre_pdf = f"{registro.folio}_{registro.razon_social.rstrip('.')}.pdf"
+                # Guardar el archivo con el nombre basado en el Folio y RUT
+                rut_limpio = registro.rut_proveedor.replace(".", "")
+                nombre_pdf = f"{registro.folio}+{rut_limpio}.pdf"
                 ruta_pdf = os.path.join(carpeta_facturas, nombre_pdf)
 
                 with open(ruta_pdf, "wb") as file:
@@ -45,12 +54,13 @@ def descargar_pdf(registros):
             else:
                 registro.estado_pdf = False
                 registro.ruta_pdf = None
-                print(f"❌ No se pudo descargar PDF para folio {registro.folio}, código HTTP: {response.status_code}")
+                print(
+                    f"❌ No se pudo descargar PDF para folio {registro.folio}, código HTTP: {response.status_code}"
+                )
 
         except requests.exceptions.RequestException as e:
             registro.estado_pdf = False
             registro.ruta_pdf = None
             print(f"⚠️ Error en la descarga del PDF para folio {registro.folio}: {e}")
-            
-        time.sleep(3)
 
+        time.sleep(3)

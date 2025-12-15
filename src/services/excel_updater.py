@@ -9,7 +9,7 @@ de datos extraídos de facturas (Monto Neto, IVA, Total, Estado Subida, URL).
 Flujo:
 1. Copiar archivo original de "Por Hacer" a "informes"
 2. Renombrar con timestamp (fecha_hora)
-3. Agregar columnas Q-U con datos de los registros procesados
+3. Agregar columnas O-S con datos de los registros procesados
 4. Retornar ruta del archivo actualizado
 """
 
@@ -23,21 +23,21 @@ import pandas as pd
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-# Definición de columnas nuevas (Q-U)
+# Definición de columnas nuevas (O-S)
 COLUMNAS_NUEVAS = {
-    "Q": "Monto Neto Factura",
-    "R": "Monto IVA Factura",
-    "S": "Monto Total Factura",
-    "T": "Estado Subida Factura",
-    "U": "URL Factura",
+    "O": "Monto Neto Factura",
+    "P": "Monto IVA Factura",
+    "Q": "Monto Total Factura",
+    "R": "Estado Subida Factura",
+    "S": "URL Factura",
 }
 
 # Índices de columnas (1-based para openpyxl)
-COL_MONTO_NETO = 17  # Q
-COL_MONTO_IVA = 18  # R
-COL_MONTO_TOTAL = 19  # S
-COL_ESTADO_SUBIDA = 20  # T
-COL_URL_FACTURA = 21  # U
+COL_MONTO_NETO = 15  # O
+COL_MONTO_IVA = 16  # P
+COL_MONTO_TOTAL = 17  # Q
+COL_ESTADO_SUBIDA = 18  # R
+COL_URL_FACTURA = 19  # S
 
 
 def _generar_nombre_con_timestamp(nombre_original: str, timestamp: str) -> str:
@@ -140,16 +140,16 @@ def _agregar_encabezados(worksheet, fila_encabezado: int = 1):
         celda.alignment = alignment_center
 
     # Ajustar ancho de columnas
-    worksheet.column_dimensions["Q"].width = 18  # Monto Neto
-    worksheet.column_dimensions["R"].width = 18  # Monto IVA
-    worksheet.column_dimensions["S"].width = 18  # Monto Total
-    worksheet.column_dimensions["T"].width = 20  # Estado Subida
-    worksheet.column_dimensions["U"].width = 50  # URL Factura
+    worksheet.column_dimensions["O"].width = 18  # Monto Neto
+    worksheet.column_dimensions["P"].width = 18  # Monto IVA
+    worksheet.column_dimensions["Q"].width = 18  # Monto Total
+    worksheet.column_dimensions["R"].width = 20  # Estado Subida
+    worksheet.column_dimensions["S"].width = 50  # URL Factura
 
 
 def _escribir_datos_registro(worksheet, fila: int, registro: Any):
     """
-    Escribe los datos de un registro en las columnas Q-U.
+    Escribe los datos de un registro en las columnas O-S.
 
     Args:
         worksheet: Hoja de trabajo de openpyxl
@@ -168,7 +168,7 @@ def _escribir_datos_registro(worksheet, fila: int, registro: Any):
     alignment_right = Alignment(horizontal="right")
     alignment_center = Alignment(horizontal="center")
 
-    # Q: Monto Neto Factura
+    # O: Monto Neto Factura
     celda_neto = worksheet.cell(row=fila, column=COL_MONTO_NETO)
     if hasattr(registro, "monto_neto") and registro.monto_neto is not None:
         celda_neto.value = registro.monto_neto
@@ -179,7 +179,7 @@ def _escribir_datos_registro(worksheet, fila: int, registro: Any):
     celda_neto.border = border_celda
     celda_neto.alignment = alignment_right
 
-    # R: Monto IVA Factura
+    # P: Monto IVA Factura
     celda_iva = worksheet.cell(row=fila, column=COL_MONTO_IVA)
     if hasattr(registro, "monto_iva") and registro.monto_iva is not None:
         celda_iva.value = registro.monto_iva
@@ -190,7 +190,7 @@ def _escribir_datos_registro(worksheet, fila: int, registro: Any):
     celda_iva.border = border_celda
     celda_iva.alignment = alignment_right
 
-    # S: Monto Total Factura
+    # Q: Monto Total Factura
     celda_total = worksheet.cell(row=fila, column=COL_MONTO_TOTAL)
     if hasattr(registro, "monto_total") and registro.monto_total is not None:
         celda_total.value = registro.monto_total
@@ -201,7 +201,7 @@ def _escribir_datos_registro(worksheet, fila: int, registro: Any):
     celda_total.border = border_celda
     celda_total.alignment = alignment_right
 
-    # T: Estado Subida Factura
+    # R: Estado Subida Factura
     celda_estado = worksheet.cell(row=fila, column=COL_ESTADO_SUBIDA)
     if hasattr(registro, "estado_subida"):
         if registro.estado_subida is True:
@@ -219,7 +219,7 @@ def _escribir_datos_registro(worksheet, fila: int, registro: Any):
     celda_estado.border = border_celda
     celda_estado.alignment = alignment_center
 
-    # U: URL Factura
+    # S: URL Factura
     celda_url = worksheet.cell(row=fila, column=COL_URL_FACTURA)
     if hasattr(registro, "drive_url") and registro.drive_url:
         celda_url.value = registro.drive_url
@@ -244,7 +244,7 @@ def copiar_y_actualizar_excel(
     1. Copia el archivo original a directorio_salida con nuevo nombre (timestamp)
     2. Abre la copia con openpyxl
     3. Lee los datos con pandas para mapear registros a filas
-    4. Agrega encabezados de columnas Q-U
+    4. Agrega encabezados de columnas O-S
     5. Escribe datos de cada registro en su fila correspondiente
     6. Guarda el archivo
 
@@ -288,7 +288,7 @@ def copiar_y_actualizar_excel(
     worksheet = workbook.active
 
     # Agregar encabezados de nuevas columnas
-    print("   📝 Agregando encabezados de columnas Q-U...")
+    print("   📝 Agregando encabezados de columnas O-S...")
     _agregar_encabezados(worksheet)
 
     # Procesar cada registro

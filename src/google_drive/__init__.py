@@ -19,28 +19,28 @@ Ejemplos de uso:
 
     # Autenticación y servicio
     from google_drive import ensure_credentials, build_drive_service
-    
+
     creds = ensure_credentials()
     service = build_drive_service(creds)
-    
+
     # Subir archivos a Drive
     from google_drive import upload_directory_to_drive
-    
+
     resultado = upload_directory_to_drive(
         nombre="SantaElena",
         fecha="2025-11-27",
         directorio="./downloads"
     )
-    
+
     # Descargar archivos
     from google_drive import download_file_by_id
     from pathlib import Path
-    
+
     download_file_by_id(service, "file_id_123", Path("./downloads"))
-    
+
     # Crear carpetas y subir archivos individuales
     from google_drive import ensure_drive_folder, upload_file_to_drive
-    
+
     carpeta = ensure_drive_folder(service, "MiCarpeta", parent_id="root")
     archivo = upload_file_to_drive(service, "./documento.pdf", carpeta["id"])
 """
@@ -58,6 +58,7 @@ from .drive_oauth import (
     list_all_drives_files,
     load_token,
     load_yaml_config,
+    move_file_in_drive,
     resolve_path_to_id,
     save_token,
     upload_file_to_drive,
@@ -96,6 +97,7 @@ __all__ = [
     "download_file_by_id",
     "ensure_drive_folder",
     "upload_file_to_drive",
+    "move_file_in_drive",
     "generate_share_link",
     # Operaciones de alto nivel
     "find_local_files",

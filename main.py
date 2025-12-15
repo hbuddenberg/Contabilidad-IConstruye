@@ -1,6 +1,7 @@
 import datetime
 import os
 import sys
+from pathlib import Path
 
 import yaml
 
@@ -534,20 +535,21 @@ def procesar_un_archivo(
     print("\n🔄 Paso 3: Procesando folios...")
     registros = procesamiento_excel(driver, registros)
 
-    # 4. Copiar y actualizar Excel con nuevas columnas (Q-U)
-    print("\n📊 Paso 4: Actualizando Excel con datos extraídos...")
+    # 4. Subir PDFs a Google Drive (primero, para obtener URLs)
+    # Estructura: /Facturas/año/Semana N/
+    print("\n☁️ Paso 4: Subiendo PDFs a Google Drive...")
+    registros_con_drive = copiar_drive(registros, None, None, ruta_drive)
+
+    # 5. Actualizar Excel con nuevas columnas (O-S) incluyendo URLs de Drive
+    print("\n📊 Paso 5: Actualizando Excel con datos extraídos y URLs...")
+    # Usar los registros actualizados con URLs de Drive
+    resultados_drive = registros_con_drive.get("resultados", [])
+    registros_para_excel = resultados_drive if resultados_drive else registros
     ruta_archivo_actualizado = copiar_y_actualizar_excel(
         ruta_archivo_original=ruta_archivo_original,
-        registros=registros,
+        registros=registros_para_excel,
         directorio_salida=directorio_informes,
         timestamp=timestamp,
-    )
-
-    # 5. Subir TODO a Google Drive (PDFs + Excel original + Excel actualizado)
-    # Estructura: /Facturas/año/Semana N/
-    print("\n☁️ Paso 5: Subiendo archivos a Google Drive...")
-    registros_con_drive = copiar_drive(
-        registros, ruta_archivo_original, ruta_archivo_actualizado, ruta_drive
     )
 
     # Validar que hay resultados para procesar
@@ -556,19 +558,70 @@ def procesar_un_archivo(
         "carpeta_destino", f"{ruta_drive}/{año}/Semana {semana}"
     )
 
-    # 6. Enviar correo a destinatario único
-    print("\n📧 Paso 6: Enviando correo con informe...")
+    # 6. Subir Excel actualizado a Google Drive
+    print("\n☁️ Paso 6: Subiendo Excel actualizado a Google Drive...")
+    if ruta_archivo_actualizado and Path(ruta_archivo_actualizado).exists():
+        try:
+            creds = drive.ensure_credentials()
+            service = drive.build_drive_service(creds)
+            # Obtener ID de la carpeta de semana
+            partes_ruta = ruta_drive.split("/")
+            parent_id = "root"
+            for carpeta in partes_ruta:
+                folder = drive.ensure_drive_folder(
+                    service, carpeta, parent_id, create=True
+                )
+                parent_id = folder["id"]
+            carpeta_año = drive.ensure_drive_folder(
+                service, str(año), parent_id, create=True
+            )
+            nombre_carpeta_semana = f"Semana {semana}"
+            carpeta_semana = drive.ensure_drive_folder(
+                service, nombre_carpeta_semana, carpeta_año["id"], create=True
+            )
+            # Subir Excel actualizado
+            drive.upload_file_to_drive(
+                service, Path(ruta_archivo_actualizado), carpeta_semana["id"]
+            )
+            print(
+                f"   ✅ Excel actualizado subido: {Path(ruta_archivo_actualizado).name}"
+            )
+        except Exception as e:
+            print(f"   ⚠️ Error subiendo Excel actualizado: {e}")
+
+    # 7. Enviar correo a destinatario único
+    print("\n📧 Paso 7: Enviando correo con informe...")
     if ruta_archivo_actualizado:
         enviar_informe_unico(
             ruta_archivo_actualizado, config, resultados if resultados else registros
         )
 
-    # 7. Eliminar archivo original de "Por Hacer" en Drive (ya está en Facturas)
-    print("\n🗑️ Paso 7: Eliminando archivo original de 'Por Hacer' en Drive...")
-    eliminar_archivo_en_drive(drive_service, archivo["id"])
+    # 8. Mover archivo original de "Por Hacer" a carpeta de Facturas en Drive
+    print("\n📦 Paso 8: Moviendo archivo original a carpeta de Facturas...")
+    try:
+        creds = drive.ensure_credentials()
+        service = drive.build_drive_service(creds)
+        # Obtener ID de la carpeta de semana destino
+        partes_ruta = ruta_drive.split("/")
+        parent_id = "root"
+        for carpeta in partes_ruta:
+            folder = drive.ensure_drive_folder(service, carpeta, parent_id, create=True)
+            parent_id = folder["id"]
+        carpeta_año = drive.ensure_drive_folder(
+            service, str(año), parent_id, create=True
+        )
+        nombre_carpeta_semana = f"Semana {semana}"
+        carpeta_semana = drive.ensure_drive_folder(
+            service, nombre_carpeta_semana, carpeta_año["id"], create=True
+        )
+        # Mover archivo original de Por Hacer a Facturas
+        drive.move_file_in_drive(service, archivo["id"], carpeta_semana["id"])
+        print(f"   ✅ Archivo movido: {archivo['name']} → {carpeta_destino}/")
+    except Exception as e:
+        print(f"   ⚠️ Error moviendo archivo original: {e}")
 
-    # 8. Limpiar archivos locales temporales
-    print("\n🧹 Paso 8: Limpiando archivos locales temporales...")
+    # 9. Limpiar archivos locales temporales
+    print("\n🧹 Paso 9: Limpiando archivos locales temporales...")
     try:
         if ruta_archivo_original and os.path.exists(ruta_archivo_original):
             os.remove(ruta_archivo_original)
@@ -597,11 +650,12 @@ def main():
     1. Leer Excel original de "Por Hacer" local
     2. Scraping en IConstruye
     3. Descargar PDFs y extraer montos
-    4. Actualizar Excel con columnas Q-U
-    5. Subir TODO a Drive (PDFs + Excel original + Excel actualizado) en /Facturas/año/Semana N/
-    6. Enviar correo a destinatario único
-    7. Eliminar archivo original de "Por Hacer" en Drive (ya está en Facturas)
-    8. Limpiar archivos locales temporales
+    4. Subir PDFs a Drive (obtener URLs)
+    5. Actualizar Excel con columnas O-S (incluyendo URLs)
+    6. Subir Excel actualizado a Drive
+    7. Enviar correo a destinatario único
+    8. Eliminar archivo original de "Por Hacer" en Drive (ya está en Facturas)
+    9. Limpiar archivos locales temporales
     """
     print("\n" + "=" * 60)
     print("🚀 INICIANDO PROCESO DE FACTURAS")
