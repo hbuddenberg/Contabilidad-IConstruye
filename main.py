@@ -205,7 +205,7 @@ def enviar_informe_unico(ruta_archivo_actualizado, config, registros):
 
     enviado = enviar_correo_api(
         destinatarios=[destinatario],
-        asunto=f"FACTURAS PARA APROBACIÓN {formato_asunto}",
+        asunto=f"NOMINA DE PAGO SEMANA {semana}",
         cuerpo_html=contenido_html,
         archivos_adjuntos=[ruta_archivo_actualizado],
         cc=[cc] if cc else None,
