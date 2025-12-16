@@ -69,7 +69,7 @@ def autenticar():
 
 
 def enviar_correo_api(
-    destinatarios, asunto, cuerpo_html, archivos_adjuntos=None, cc=None
+    destinatarios, asunto, cuerpo_html, archivos_adjuntos=None, cc=None, bcc=None
 ):
     """
     Envía un correo utilizando la API de Gmail con OAuth 2.0.
@@ -80,6 +80,7 @@ def enviar_correo_api(
         cuerpo_html (str): Contenido HTML del correo.
         archivos_adjuntos (list): Lista de rutas de archivos adjuntos.
         cc (list): Lista de destinatarios en copia.
+        bcc (list): Lista de destinatarios en copia oculta.
 
     Returns:
         bool: True si el correo se envió correctamente, False en caso contrario.
@@ -102,6 +103,11 @@ def enviar_correo_api(
             cc_limpio = [correo.strip() for correo in cc if correo.strip()]
             if cc_limpio:
                 message["Cc"] = ", ".join(cc_limpio)
+        # Validación y asignación de BCC
+        if bcc and isinstance(bcc, list):
+            bcc_limpio = [correo.strip() for correo in bcc if correo.strip()]
+            if bcc_limpio:
+                message["Bcc"] = ", ".join(bcc_limpio)
         message["Subject"] = asunto
         message.attach(MIMEText(cuerpo_html, "html"))
 

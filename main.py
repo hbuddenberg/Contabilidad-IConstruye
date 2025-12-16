@@ -104,7 +104,7 @@ def procesamiento_excel(driver, registros):
 
 
 # Enviar informe único a destinatario configurado
-def enviar_informe_unico(ruta_archivo_actualizado, config, registros):
+def enviar_informe_unico(ruta_archivo_actualizado, config, registros, semana, bcc=None):
     """
     Envía el archivo Excel actualizado a un único destinatario.
     Incluye tabla de folios que no se pudieron procesar.
@@ -205,7 +205,8 @@ def enviar_informe_unico(ruta_archivo_actualizado, config, registros):
 
     enviado = enviar_correo_api(
         destinatarios=[destinatario],
-        asunto=f"NOMINA DE PAGO SEMANA {semana}",
+        asunto=f"NÓMINA DE PAGO SEMANA {semana}",
+        bcc=bcc,
         cuerpo_html=contenido_html,
         archivos_adjuntos=[ruta_archivo_actualizado],
         cc=[cc] if cc else None,
@@ -593,7 +594,11 @@ def procesar_un_archivo(
     print("\n📧 Paso 7: Enviando correo con informe...")
     if ruta_archivo_actualizado:
         enviar_informe_unico(
-            ruta_archivo_actualizado, config, resultados if resultados else registros
+            ruta_archivo_actualizado,
+            config,
+            resultados if resultados else registros,
+            semana,
+            config.get("correo", {}).get("bcc", []),
         )
 
     # 8. Mover archivo original de "Por Hacer" a carpeta de Facturas en Drive

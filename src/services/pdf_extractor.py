@@ -97,6 +97,9 @@ def limpiar_monto(monto_str: str) -> Optional[int]:
     # Remover símbolos y espacios
     limpio = monto_str.replace("$", "").replace(" ", "").strip()
 
+    # Asegurarse de capturar correctamente valores con puntos como separadores de miles
+    limpio = re.sub(r"\.(?=\d{3}(?:\D|$))", "", limpio)
+
     # Remover puntos de miles (formato chileno)
     limpio = limpio.replace(".", "")
 
@@ -139,15 +142,21 @@ def extraer_montos(texto: str) -> Dict[str, Optional[int]]:
 
     # Normalizar texto: mayúsculas y espacios múltiples
     texto_norm = texto.upper()
-    texto_norm = re.sub(r"\s+", " ", texto_norm)
+    texto_norm = re.sub(
+        r"\s+", " ", texto_norm
+    )  # Reemplazar múltiples espacios por uno
+    texto_norm = re.sub(
+        r"(?<=\\$)\\s+", "", texto_norm
+    )  # Eliminar espacios después del símbolo $
 
     # Patrón para montos chilenos: $ seguido de números con puntos
     # Captura: $1.234.567 o $ 1.234.567 o 1.234.567
-    patron_monto = r"\$?\s*([\d\.]+(?:,\d+)?)"
+    patron_monto = r"\$?\s*([\d]{1,3}(?:\.\d{3})*(?:,\d+)?)"
 
     # === MONTO NETO ===
     patrones_neto = [
         r"MONTO\s*NETO\s*:?\s*" + patron_monto,
+        r"TOTAL\s*NETO\s*:?\s*" + patron_monto,
         r"NETO\s*:?\s*" + patron_monto,
         r"SUB\s*TOTAL\s*NETO\s*:?\s*" + patron_monto,
         r"VALOR\s*NETO\s*:?\s*" + patron_monto,
@@ -163,6 +172,7 @@ def extraer_montos(texto: str) -> Dict[str, Optional[int]]:
     # === MONTO IVA ===
     patrones_iva = [
         r"MONTO\s*IVA\s*:?\s*" + patron_monto,
+        r"TOTAL\s*I\.?V\.?A\.?\s*:?\s*" + patron_monto,
         r"IVA\s*(?:\(?\s*19\s*%?\s*\)?)?\s*:?\s*" + patron_monto,
         r"I\.?V\.?A\.?\s*(?:\(?\s*19\s*%?\s*\)?)?\s*:?\s*" + patron_monto,
         r"IMPUESTO\s*:?\s*" + patron_monto,
@@ -178,6 +188,7 @@ def extraer_montos(texto: str) -> Dict[str, Optional[int]]:
     # === MONTO TOTAL ===
     patrones_total = [
         r"MONTO\s*TOTAL\s*:?\s*" + patron_monto,
+        r"TOTAL\s*A\s*PAGAR\s*:?\s*" + patron_monto,
         r"TOTAL\s*(?:A\s*PAGAR)?\s*:?\s*" + patron_monto,
         r"VALOR\s*TOTAL\s*:?\s*" + patron_monto,
         r"TOTAL\s*FACTURA\s*:?\s*" + patron_monto,
