@@ -42,7 +42,7 @@ def descargar_pdf(registros):
             if response.status_code == 200:
                 # Guardar el archivo con el nombre basado en el Folio y RUT
                 rut_limpio = registro.rut_proveedor.replace(".", "")
-                nombre_pdf = f"{registro.folio}+{rut_limpio}.pdf"
+                nombre_pdf = f"{rut_limpio}+{registro.folio}.pdf"
                 ruta_pdf = os.path.join(carpeta_facturas, nombre_pdf)
 
                 with open(ruta_pdf, "wb") as file:
